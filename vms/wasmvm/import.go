@@ -23,9 +23,8 @@ import (
 )
 
 const (
-	addressSize            = 20
-	maxContractDbKeySize   = 1024
-	maxContractDbValueSize = 1024
+	addressSize = 20
+	maxSize     = 1024 // for keys and values in contract DB
 )
 
 type ctx struct {
@@ -68,6 +67,10 @@ func dbPut(context unsafe.Pointer, keyPtr C.int, keyLen C.int, valuePtr C.int, v
 	ctx := ctxRaw.Data().(ctx)
 
 	// Validate arguments
+	if keyLen > maxSize || valueLen > maxSize {
+		ctx.log.Error("dbPut failed. key or value length exceeds max size, %v", maxSize)
+		return 1
+	}
 	if keyPtr < 0 || keyLen < 0 {
 		ctx.log.Error("dbPut failed. Key pointer and length must be non-negative")
 		return 1
@@ -199,7 +202,7 @@ func getSender(context unsafe.Pointer, ptr C.int) C.int {
 }
 
 // Write the byte arguments to a contract method to the contract's memory, starting at [ptr]
-// The arguments are guaranteed to be no more than maxContractDbValueSize
+// The arguments are guaranteed to be no more than maxValueSize
 // Returns the length of the args, or -1 if the call was unsuccessful
 //export getArgs
 func getArgs(context unsafe.Pointer, ptr C.int) C.int {
@@ -240,8 +243,8 @@ func returnValue(context unsafe.Pointer, valuePtr C.int, valueLen C.int) C.int {
 	ctx := ctxRaw.Data().(ctx)
 
 	// Validate arguments
-	if valueLen > maxContractDbValueSize {
-		ctx.log.Error("returnValue failed. valueLen > macContractDbValueSize")
+	if valueLen > maxSize {
+		ctx.log.Error("returnValue failed. valueLen exceeds max size, %v", maxSize)
 		return -1
 	}
 	if valuePtr < 0 || valueLen < 0 {

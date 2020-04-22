@@ -75,6 +75,8 @@ func (tx *invokeTx) SyntacticVerify() error {
 		return errors.New("tx ID is empty")
 	case tx.FunctionName == "":
 		return errors.New("function name is empty")
+	case len(tx.ByteArguments) > maxSize:
+		return fmt.Errorf("length of byteArguments exceeds max size, %v", maxSize)
 	}
 
 	// Ensure all arguments are floats or ints
