@@ -10,6 +10,7 @@ package wasmvm
 import "C"
 import (
 	"fmt"
+	"unicode/utf8"
 	"unsafe"
 
 	"github.com/ava-labs/gecko/ids"
@@ -47,7 +48,14 @@ func print(context unsafe.Pointer, ptr C.int, strLen C.int) {
 		ctx.log.Error("Print from smart contract failed. Index out of bounds.")
 		return
 	}
-	ctx.log.Info("Print from smart contract: %v", string(instanceMemory[ptr:finalIndex]))
+
+	toPrint := instanceMemory[ptr:finalIndex]
+	if asStr := string(toPrint); utf8.ValidString(asStr) {
+		ctx.log.Info("Print from smart contract: %s", asStr)
+	} else {
+		ctx.log.Info("Print from smart contract: %v", toPrint)
+	}
+
 }
 
 // Put a KV pair where the key/value are defined by a pointer to the first byte
@@ -215,7 +223,7 @@ func getArgs(context unsafe.Pointer, ptr C.int) C.int {
 
 	// Put the args
 	copy(contractState[ptr:], args)
-	return 0
+	return C.int(len(args))
 }
 
 // Smart contract methods call this method to return a value

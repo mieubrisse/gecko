@@ -7,6 +7,9 @@ extern "C" {
     fn dbPut(key_ptr: u32, key_len: u32, value_ptr: u32, value_len: u32) -> i32;
     fn dbGet(key_ptr: u32, key_len: u32, value_ptr: u32) -> i32;
     fn dbGetValueLen(key_ptr: u32, key_len: u32) -> i32;
+    fn getArgs(value_ptr: u32) -> i32;
+    fn getSender(ptr: u32) -> i32;
+    fn returnValue(value_ptr: u32, value_len: u32) -> i32;
 }
 
 lazy_static! {
@@ -105,7 +108,7 @@ pub extern fn update_bag_price(id: u32, price: u32) -> i32 {
 pub extern fn get_bag_price(id: u32) -> i32 {
     unsafe {
         if let Some(bag) = BAGS.lock().unwrap().get(&id) {
-            return dbPut(return_key().as_ptr() as u32, 1, bag.price.to_be_bytes().as_ptr() as u32, 4);
+            returnValue(bag.price.to_be_bytes().as_ptr() as u32, 4)
         } else {
             1
         }
@@ -118,7 +121,7 @@ pub extern fn get_bag_price(id: u32) -> i32 {
 pub extern fn get_num_bags(id: u32) -> i32 {
     unsafe {
         if let Some(owner) = OWNERS.lock().unwrap().get(&id) {
-            return dbPut(return_key().as_ptr() as u32, 1, owner.bags.len().to_be_bytes().as_ptr() as u32, 4)
+            returnValue(owner.bags.len().to_be_bytes().as_ptr() as u32, 4)
         } else {
             1
         }
@@ -131,7 +134,7 @@ pub extern fn get_num_bags(id: u32) -> i32 {
 pub extern fn get_owner(id: u32) -> i32 {
     unsafe {
         if let Some(bag) = BAGS.lock().unwrap().get(&id) {
-            return dbPut(return_key().as_ptr() as u32, 1, bag.owner_id.to_be_bytes().as_ptr() as u32, 4)
+            returnValue(bag.owner_id.to_be_bytes().as_ptr() as u32, 4)
         } else {
             1
         }
@@ -192,24 +195,29 @@ pub extern fn put_hello() {
 // print byte arguments to this method
 #[no_mangle]
 pub extern fn print_byte_args() -> i32 {
-    unsafe { 
-        let args_len = dbGetValueLen(0, 0);
-        if args_len == -1 { // couldn't get args len
-            return 1
-        }
-        let mut buffer: std::vec::Vec<u8> = Vec::with_capacity(args_len as usize);
-        let pointer = buffer.as_mut_ptr() as u32;
-        let success = dbGet(0,0, pointer);
-        if success == -1 {
-            return 1
+    unsafe {
+        let args: std::vec::Vec<u8> = Vec::with_capacity(1024 as usize);
+        let pointer = args.as_ptr() as u32;
+        let args_len = getArgs(pointer);
+        if args_len == -1 {
+            return -1;
         }
         print(pointer, args_len as u32);
-        return 0;
+        0
     }
 }
 
-fn return_key() -> Vec<u8> {
-    let mut buffer: std::vec::Vec<u8> = Vec::with_capacity(1);
-    buffer.push(1);
-    return buffer;
+// print the sender that invoked this method
+#[no_mangle]
+pub extern fn print_sender() -> i32 {
+    unsafe {
+        let sender: std::vec::Vec<u8> = Vec::with_capacity(20 as usize);
+        let pointer = sender.as_ptr() as u32;
+        let sender_len = getSender(pointer);
+        if sender_len == -1 {
+            return -1;
+        }
+        print(pointer, 20);
+        0
+    }
 }

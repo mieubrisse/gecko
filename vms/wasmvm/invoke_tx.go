@@ -172,7 +172,7 @@ func (tx *invokeTx) SemanticVerify(db database.Database) error {
 
 	// Persist the transaction and its return value
 	returnValue := []byte{}
-	if val, err := contractDb.Get(returnKey); err != nil {
+	if val, err := contractDb.Get(returnKey); err == nil {
 		returnValue = val
 	}
 	rv := &txReturnValue{ // TODO: persist tx in every execution of this method
