@@ -16,6 +16,7 @@ const (
 	contractBytesTypeID uint64 = iota
 	stateTypeID
 	txTypeID
+	accountTypeID
 )
 
 // put a contract (in its raw byte form) in the database
@@ -123,6 +124,24 @@ func (vm *VM) getTx(db database.Database, txID ids.ID) (*txReturnValue, error) {
 	return tx, nil
 }
 
+// Persist an account
+func (vm *VM) putAccount(db database.Database, account *Account) error {
+	return vm.State.Put(db, accountTypeID, account.Address.LongID(), account)
+}
+
+// Get an account
+func (vm *VM) getAccount(db database.Database, accountID ids.ShortID) (*Account, error) {
+	acctIntf, err := vm.State.Get(db, accountTypeID, accountID.LongID())
+	if err != nil {
+		return nil, err
+	}
+	account, ok := acctIntf.(*Account)
+	if !ok {
+		return nil, fmt.Errorf("expected *Account from database but got different type")
+	}
+	return account, nil
+}
+
 func (vm *VM) registerDBTypes() error {
 	unmarshalBytesFunc := func(bytes []byte) (interface{}, error) { return bytes, nil }
 	if err := vm.State.RegisterType(contractBytesTypeID, unmarshalBytesFunc); err != nil {
@@ -139,6 +158,14 @@ func (vm *VM) registerDBTypes() error {
 	}
 	if err := vm.State.RegisterType(txTypeID, unmarshalTxFunc); err != nil {
 		return fmt.Errorf("error registering tx type with state: %v", err)
+	}
+
+	unmarshalAccountFunc := func(bytes []byte) (interface{}, error) {
+		var acct Account
+		return &acct, codec.Unmarshal(bytes, &acct)
+	}
+	if err := vm.State.RegisterType(accountTypeID, unmarshalAccountFunc); err != nil {
+		return fmt.Errorf("error registering account type with state: %v", err)
 	}
 	return nil
 }
