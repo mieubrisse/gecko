@@ -16,7 +16,9 @@ import (
 	"github.com/ava-labs/gecko/vms/components/core"
 )
 
-const cacheSize = 128
+const (
+	cacheSize = 128
+)
 
 // VM defines the Salesforce Chain
 type VM struct {

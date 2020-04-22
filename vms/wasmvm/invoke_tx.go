@@ -20,8 +20,16 @@ import (
 	"github.com/ava-labs/gecko/ids"
 )
 
-// A SC's return value is mapped to by this key in the SC's database
-var returnKey = []byte{1}
+var (
+	// Maps to the byte arguments to a method in the SC's database
+	argsKey = []byte{}
+
+	// Maps to a SC's return value in the SC's database
+	returnKey = []byte{1}
+
+	// Maps to the address of the sender of this tx in the SC's database
+	senderKey = []byte{2}
+)
 
 // UnsignedInvokeTx is an unsigned invokeTx
 type UnsignedInvokeTx struct {
@@ -98,7 +106,7 @@ func (tx *invokeTx) SyntacticVerify() error {
 // A SC method need not do this. Such a method will be considered to have returned "void".
 func (tx *invokeTx) SemanticVerify(db database.Database) error {
 	// Get the sender of this transaction
-	_, err := tx.getSender()
+	sender, err := tx.getSender()
 	if err != nil {
 		return fmt.Errorf("couldn't get transaction sender: %v", err)
 	}
@@ -116,10 +124,11 @@ func (tx *invokeTx) SemanticVerify(db database.Database) error {
 
 	// Update the contract's context
 	contract.SetContextData(ctx{
-		log:    tx.vm.Ctx.Log,
-		db:     contractDb,
-		memory: contract.Memory,
-		txID:   tx.ID(),
+		log:        tx.vm.Ctx.Log,
+		contractDb: contractDb,
+		memory:     contract.Memory,
+		txID:       tx.ID(),
+		sender:     sender,
 	})
 
 	// Get the function to call
@@ -128,14 +137,15 @@ func (tx *invokeTx) SemanticVerify(db database.Database) error {
 		return fmt.Errorf("contract has no function '%s'", tx.FunctionName)
 	}
 
-	// Set the byteArguments to pass to function
-	// They're mapped to by the empty key in the contract's db
-	if err := contractDb.Put([]byte{}, tx.ByteArguments); err != nil {
+	// Set information to pass to contract's function
+	if err := contractDb.Put(argsKey, tx.ByteArguments); err != nil {
 		return fmt.Errorf("couldn't set byte arguments: %v", err)
 	}
-
-	// Clear the old return value
-	db.Delete(returnKey)
+	senderBytes := sender.Key()
+	if err := contractDb.Put(senderKey, senderBytes[:]); err != nil {
+		return fmt.Errorf("couldn't set sender: %v", err)
+	}
+	db.Delete(returnKey) // Clear the old return value
 
 	// Call the function
 	val, err := fn(tx.Arguments...)
@@ -162,7 +172,9 @@ func (tx *invokeTx) SemanticVerify(db database.Database) error {
 
 	// Persist the transaction and its return value
 	returnValue := []byte{}
-	returnValue, _ = contractDb.Get(returnKey)
+	if val, err := contractDb.Get(returnKey); err != nil {
+		returnValue = val
+	}
 	rv := &txReturnValue{ // TODO: persist tx in every execution of this method
 		Tx:                   tx,
 		Status:               choices.Accepted,

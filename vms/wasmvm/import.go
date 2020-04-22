@@ -5,6 +5,8 @@ package wasmvm
 // int dbGet(void *context, int key, int keyLen, int value);
 // int returnValue(void *context, int valuePtr, int valueLen);
 // int dbGetValueLen(void *context, int keyPtr, int keyLen);
+// int getArgs(void *context, int ptr);
+// int getSender(void *context, int ptr);
 import "C"
 import (
 	"fmt"
@@ -19,11 +21,18 @@ import (
 	wasm "github.com/wasmerio/go-ext-wasm/wasmer"
 )
 
+const (
+	addressSize            = 20
+	maxContractDbKeySize   = 1024
+	maxContractDbValueSize = 1024
+)
+
 type ctx struct {
-	log    logging.Logger    // this chain's logger
-	db     database.Database // DB for the contract to read/write
-	memory *wasm.Memory      // the instance's memory
-	txID   ids.ID            // ID of transaction that triggered current SC method invocation
+	log        logging.Logger    // this chain's logger
+	contractDb database.Database // DB for the contract to read/write
+	memory     *wasm.Memory      // the instance's memory
+	txID       ids.ID            // ID of transaction that triggered current SC method invocation
+	sender     ids.ShortID       // Address of sender of the tx that triggered current SC method invocation
 }
 
 // Print bytes in the smart contract's memory
@@ -74,7 +83,7 @@ func dbPut(context unsafe.Pointer, keyPtr C.int, keyLen C.int, valuePtr C.int, v
 	key := contractState[keyPtr:keyFinalIndex]
 	value := contractState[valuePtr:valueFinalIndex]
 	ctx.log.Debug("Putting K/V pair for contract.\n  key: %v\n  value: %v", key, value)
-	if err := ctx.db.Put(key, value); err != nil {
+	if err := ctx.contractDb.Put(key, value); err != nil {
 		ctx.log.Error("dbPut failed: %s", err)
 		return 1
 	}
@@ -107,7 +116,7 @@ func dbGet(context unsafe.Pointer, keyPtr C.int, keyLen C.int, valuePtr C.int) C
 	}
 
 	key := contractState[keyPtr:keyFinalIndex]
-	value, err := ctx.db.Get(key)
+	value, err := ctx.contractDb.Get(key)
 	if err != nil {
 		ctx.log.Error("dbGet failed: %s", err)
 		return -1
@@ -139,7 +148,7 @@ func dbGetValueLen(context unsafe.Pointer, keyPtr C.int, keyLen C.int) C.int {
 	}
 
 	key := contractState[keyPtr:keyFinalIndex]
-	value, err := ctx.db.Get(key)
+	value, err := ctx.contractDb.Get(key)
 	if err != nil {
 		ctx.log.Error("dbGetValueLen failed: %s", err)
 		return -1
@@ -148,11 +157,73 @@ func dbGetValueLen(context unsafe.Pointer, keyPtr C.int, keyLen C.int) C.int {
 	return C.int(len(value))
 }
 
+// Write the address that triggered this contract invocation to the contract's memory, starting at [ptr]
+// The address is guaranteed to be addressSize bytes
+// Returns 0 on success, other return value indicates failure
+//export getSender
+func getSender(context unsafe.Pointer, ptr C.int) C.int {
+	// Get the context
+	ctxRaw := wasm.IntoInstanceContext(context)
+	ctx := ctxRaw.Data().(ctx)
+
+	// Get the sender
+	sender, err := ctx.contractDb.Get(senderKey)
+	if err != nil {
+		ctx.log.Error("getSender failed. Couldn't get sender: %v", err)
+		return -1
+	}
+	if senderLen := len(sender); senderLen != addressSize {
+		ctx.log.Error("getSender failed. Expected sender address to be %v bytes but got %v", addressSize, senderLen)
+		return -1
+	}
+
+	// Check for array bounds
+	contractState := ctx.memory.Data()
+	finalIndex, err := math.Add32(uint32(ptr), uint32(len(sender)))
+	if err != nil || int(finalIndex) > len(contractState) {
+		ctx.log.Error("getSender failed. Index out of bounds")
+		return -1
+	}
+
+	// Write the sender's address
+	copy(contractState[ptr:], sender)
+	return 0
+}
+
+// Write the byte arguments to a contract method to the contract's memory, starting at [ptr]
+// The arguments are guaranteed to be no more than maxContractDbValueSize
+// Returns the length of the args, or -1 if the call was unsuccessful
+//export getArgs
+func getArgs(context unsafe.Pointer, ptr C.int) C.int {
+	// Get the context
+	ctxRaw := wasm.IntoInstanceContext(context)
+	ctx := ctxRaw.Data().(ctx)
+
+	// Get the args
+	args, err := ctx.contractDb.Get(argsKey)
+	if err != nil {
+		ctx.log.Error("getArgs failed. Couldn't get arguments %v", err)
+	}
+
+	// Check for array bounds
+	contractState := ctx.memory.Data()
+	finalIndex, err := math.Add32(uint32(ptr), uint32(len(args)))
+	if err != nil || int(finalIndex) > len(contractState) {
+		ctx.log.Error("getArgs failed. Index out of bounds")
+		return -1
+	}
+
+	// Put the args
+	copy(contractState[ptr:], args)
+	return 0
+}
+
 // Smart contract methods call this method to return a value
 // Creates a mapping:
-//   Key: Tx ID of tx that invoked smart contract
+//   Key: returnKey (defined in invoke_tx.go)
 //   Value: contract's memory in [ptr,ptr+len)
-// Can only called at most once by a smart contract
+// Should be called at most once by a smart contract
+// If called multiple times, final call determined return value
 // Returns 0 on success, other return value indicates failure
 //export returnValue
 func returnValue(context unsafe.Pointer, valuePtr C.int, valueLen C.int) C.int {
@@ -161,6 +232,10 @@ func returnValue(context unsafe.Pointer, valuePtr C.int, valueLen C.int) C.int {
 	ctx := ctxRaw.Data().(ctx)
 
 	// Validate arguments
+	if valueLen > maxContractDbValueSize {
+		ctx.log.Error("returnValue failed. valueLen > macContractDbValueSize")
+		return -1
+	}
 	if valuePtr < 0 || valueLen < 0 {
 		ctx.log.Error("returnValue failed. Value pointer and length must be non-negative")
 		return -1
@@ -172,8 +247,12 @@ func returnValue(context unsafe.Pointer, valuePtr C.int, valueLen C.int) C.int {
 		return -1
 	}
 
-	value := contractState[valuePtr:finalIndex] // TODO do something with the returned value
-	ctx.log.Verbo("returned value: %v", value)
+	// Put the value
+	value := contractState[valuePtr:finalIndex]
+	if err := ctx.contractDb.Put(returnKey, value); err != nil {
+		return -1
+	}
+
 	return 0
 }
 
@@ -198,6 +277,18 @@ func standardImports() *wasm.Imports {
 	imports, err = imports.AppendFunction("dbGetValueLen", dbGetValueLen, C.dbGetValueLen)
 	if err != nil {
 		panic(fmt.Sprintf("couldn't add dbGetValueLen import: %v", err))
+	}
+	imports, err = imports.AppendFunction("returnValue", returnValue, C.returnValue)
+	if err != nil {
+		panic(fmt.Sprintf("couldn't add returnValue import: %v", err))
+	}
+	imports, err = imports.AppendFunction("getArgs", getArgs, C.getArgs)
+	if err != nil {
+		panic(fmt.Sprintf("couldn't add getArgs import: %v", err))
+	}
+	imports, err = imports.AppendFunction("getSender", getSender, C.getSender)
+	if err != nil {
+		panic(fmt.Sprintf("couldn't add getSender import: %v", err))
 	}
 	return imports
 }
