@@ -76,18 +76,24 @@ func (arg *ArgAPI) toFnArg() (interface{}, error) {
 
 // InvokeArgs ...
 type InvokeArgs struct {
-	ContractID ids.ID          `json:"contractID"`
-	Function   string          `json:"function"`
-	Args       []ArgAPI        `json:"args"`
-	ByteArgs   formatting.CB58 `json:"byteArgs"`
+	// Contract to invoke
+	ContractID ids.ID `json:"contractID"`
+	// Function in contract to invoke
+	Function string `json:"function"`
+	// Private Key signing the invocation tx
+	// This key's address is the "sender"
+	// Must be byte repr. of a SECP256K1R private key
+	PrivateKey formatting.CB58 `json:"privateKey"`
+	// Integer arguments to the function
+	Args []ArgAPI `json:"args"`
+	// Byte arguments to the function
+	ByteArgs formatting.CB58 `json:"byteArgs"`
 }
 
 func (args *InvokeArgs) validate() error {
-	/*
-		if args.ContractID.Equals(ids.Empty) {
-			return errors.New("contractID not specified")
-		}
-	*/
+	if args.ContractID.Equals(ids.Empty) {
+		return errors.New("contractID not specified")
+	}
 	if args.Function == "" {
 		return errors.New("function not specified")
 	}
@@ -115,7 +121,12 @@ func (s *Service) Invoke(_ *http.Request, args *InvokeArgs, response *InvokeResp
 		}
 	}
 
-	tx, err := s.vm.newInvokeTx(args.ContractID, args.Function, fnArgs, args.ByteArgs.Bytes)
+	privateKey, err := keyFactory.ToPrivateKey(args.PrivateKey.Bytes)
+	if err != nil {
+		return fmt.Errorf("couldn't parse 'privateKey' to a SECP256K1R private key: %v", err)
+	}
+
+	tx, err := s.vm.newInvokeTx(args.ContractID, args.Function, fnArgs, args.ByteArgs.Bytes, privateKey)
 	if err != nil {
 		return fmt.Errorf("couldn't create tx: %s", err)
 	}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/ava-labs/gecko/utils/crypto"
 	"github.com/ava-labs/gecko/utils/formatting"
 
 	"github.com/wasmerio/go-ext-wasm/wasmer"
@@ -22,10 +23,9 @@ import (
 // A SC's return value is mapped to by this key in the SC's database
 var returnKey = []byte{1}
 
-// invokes a function of a contract
-type invokeTx struct {
-	vm    *VM
-	bytes []byte
+// UnsignedInvokeTx is an unsigned invokeTx
+type UnsignedInvokeTx struct {
+	vm *VM
 
 	// ID of this tx
 	id ids.ID
@@ -36,12 +36,23 @@ type invokeTx struct {
 	// Name of function to invoke
 	FunctionName string `serialize:"true"`
 
-	// Arguments to the function
+	// Integer Arguments to the function
 	Arguments []interface{} `serialize:"true"`
 
 	// Byte arguments to pass to the method
 	// Should be in the form of a JSON
 	ByteArguments []byte `serialize:"true"`
+}
+
+// invokes a function of a contract
+type invokeTx struct {
+	UnsignedInvokeTx `serialize:"true"`
+
+	// Signature of the address invoking the contract
+	SenderSig [crypto.SECP256K1RSigLen]byte `serialize:"true"`
+
+	// Byte representation of this tx (including signature)
+	bytes []byte
 }
 
 // ID returns this tx's ID
@@ -86,6 +97,12 @@ func (tx *invokeTx) SyntacticVerify() error {
 // containing only 1 (ie []byte{1}) and the value is the return value of the method.
 // A SC method need not do this. Such a method will be considered to have returned "void".
 func (tx *invokeTx) SemanticVerify(db database.Database) error {
+	// Get the sender of this transaction
+	_, err := tx.getSender()
+	if err != nil {
+		return fmt.Errorf("couldn't get transaction sender: %v", err)
+	}
+
 	// Get the contract and its state
 	contract, err := tx.vm.getContract(db, tx.ContractID)
 	if err != nil {
@@ -126,6 +143,7 @@ func (tx *invokeTx) SemanticVerify(db database.Database) error {
 		return fmt.Errorf("error during call to function '%s': %v", tx.FunctionName, err)
 	}
 
+	// See if invocation was successful
 	var success bool
 	switch val.GetType() {
 	case wasmer.TypeI32:
@@ -135,9 +153,7 @@ func (tx *invokeTx) SemanticVerify(db database.Database) error {
 	default:
 		return fmt.Errorf("smart contract method must return int32 or int64")
 	}
-
 	tx.vm.Ctx.Log.Info("call to '%s' returned: %v", tx.FunctionName, val)
-	val.GetType()
 
 	// Save the contract's state
 	if err := tx.vm.putContractState(db, tx.ContractID, contract.Memory.Data()); err != nil {
@@ -160,7 +176,7 @@ func (tx *invokeTx) SemanticVerify(db database.Database) error {
 	return nil
 }
 
-// Set tx.vm, tx.bytes, tx.id
+// Set tx.vm, tx.bytes, tx.id, tx.unsignedBytes
 func (tx *invokeTx) initialize(vm *VM) error {
 	tx.vm = vm
 	var err error
@@ -172,19 +188,45 @@ func (tx *invokeTx) initialize(vm *VM) error {
 	return nil
 }
 
+// Get the sender of this tx (the address whose public key signed it)
+func (tx *invokeTx) getSender() (ids.ShortID, error) {
+	unsignedBytes, err := codec.Marshal(tx.UnsignedInvokeTx)
+	if err != nil {
+		return ids.ShortEmpty, fmt.Errorf("couldn't marshal UnsignedInvokeTx: %v", err)
+	}
+	pubKey, err := keyFactory.RecoverPublicKey(unsignedBytes, tx.SenderSig[:])
+	if err != nil {
+		return ids.ShortEmpty, fmt.Errorf("couldn't recover public key on invokeTx: %v", err)
+	}
+	return pubKey.Address(), nil
+}
+
 // Creates a new, initialized tx
-func (vm *VM) newInvokeTx(contractID ids.ID, functionName string, args []interface{}, byteArgs []byte) (*invokeTx, error) {
+func (vm *VM) newInvokeTx(contractID ids.ID, functionName string, args []interface{}, byteArgs []byte, key crypto.PrivateKey) (*invokeTx, error) {
 	tx := &invokeTx{
-		vm:            vm,
-		ContractID:    contractID,
-		FunctionName:  functionName,
-		Arguments:     args,
-		ByteArguments: byteArgs,
+		UnsignedInvokeTx: UnsignedInvokeTx{
+			vm:            vm,
+			ContractID:    contractID,
+			FunctionName:  functionName,
+			Arguments:     args,
+			ByteArguments: byteArgs,
+		},
 	}
-	if err := tx.initialize(vm); err != nil {
-		return nil, err
+	// Sign the tx
+	unsignedBytes, err := codec.Marshal(tx.UnsignedInvokeTx)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't marshal UnsignedInvokeTx: %v", err)
 	}
-	return tx, nil
+	sig, err := key.Sign(unsignedBytes)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't sign UnsignedInvokeTx: %v", err)
+	}
+	if len(sig) != len(tx.SenderSig) {
+		return nil, fmt.Errorf("signature on invokeTx is wrong length. Expected %v but got %v", len(tx.SenderSig), len(sig))
+	}
+	copy(tx.SenderSig[:], sig)
+
+	return tx, tx.initialize(vm)
 }
 
 func (tx *invokeTx) MarshalJSON() ([]byte, error) {
