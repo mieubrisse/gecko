@@ -238,7 +238,9 @@ The method `print_byte_args` in the contract we defined above reads the byte arg
 When we call it:
 
 ```sh
-{
+curl --location --request POST 'localhost:9650/ext/bc/wasm' \
+--header 'Content-Type: application/json' \
+--data-raw '{
     "jsonrpc": "2.0",
     "method": "wasm.invoke",
     "params": {
@@ -248,7 +250,7 @@ When we call it:
         "byteArgs":"U1Gavwb6Dr7nwea5Qgp2hPNv1fDg2o5XAzHpWtcEBS5cq6F78Nv5GUxp"
     },
     "id": 1
-}
+}'
 ```
 
 The following line is printed to the node's output:
@@ -272,7 +274,9 @@ If the method wants to return a value, it converts it to a byte array and writes
 Let's invoke contract method `get_num_bags`, which returns the number of bags that a given owner owns. This method takes one argument, the owner's ID.
 
 ```sh
-{
+curl --location --request POST 'localhost:9650/ext/bc/wasm' \
+--header 'Content-Type: application/json' \
+--data-raw '{
     "jsonrpc": "2.0",
     "method": "wasm.invoke",
     "params": {
@@ -286,7 +290,7 @@ Let's invoke contract method `get_num_bags`, which returns the number of bags th
         ]
     },
     "id": 1
-}
+}'
 ```
 
 This returns `txID` `8UMzqASLDGo1ehWrgfnN151zZZtZh3ZDrRt4njQNRTHEmNHZv`.
