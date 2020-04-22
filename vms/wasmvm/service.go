@@ -32,6 +32,22 @@ type Service struct {
 	vm *VM
 }
 
+// CreateAccountResponse ...
+type CreateAccountResponse struct {
+	// A new private key
+	Key formatting.CB58 `json:"privateKey"`
+}
+
+// CreateAccount returns a new private key
+func (s *Service) CreateAccount(_ *http.Request, args *struct{}, response *CreateAccountResponse) error {
+	key, err := keyFactory.NewPrivateKey()
+	if err != nil {
+		return fmt.Errorf("couldn't create new private key: %v", err)
+	}
+	response.Key = formatting.CB58{Bytes: key.Bytes()}
+	return nil
+}
+
 // ArgAPI is the API repr of a function argument
 type ArgAPI struct {
 	Type  string      `json:"type"`
