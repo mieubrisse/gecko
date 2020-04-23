@@ -26,9 +26,6 @@ var (
 
 	// Maps to a SC's return value in the SC's database
 	returnKey = []byte{1}
-
-	// Maps to the address of the sender of this tx in the SC's database
-	senderKey = []byte{2}
 )
 
 // UnsignedInvokeTx is an unsigned invokeTx
@@ -145,6 +142,7 @@ func (tx *invokeTx) SemanticVerify(db database.Database) error {
 	// Call the function
 	val, err := fn(tx.Arguments...)
 	if err != nil {
+		// TODO: How to handle errors during method invocation?
 		return fmt.Errorf("error during call to function '%s': %v", tx.FunctionName, err)
 	}
 

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	wasm "github.com/wasmerio/go-ext-wasm/wasmer"
+
 	"github.com/ava-labs/gecko/snow/choices"
 
 	"github.com/ava-labs/gecko/utils/crypto"
@@ -91,6 +93,10 @@ func (tx *createContractTx) SyntacticVerify() error {
 }
 
 func (tx *createContractTx) SemanticVerify(db database.Database) error {
+	// Verify that [tx.ContractBytes] is valid WASM
+	if !wasm.Validate(tx.ContractBytes) {
+		return fmt.Errorf("contract is not valid WASM")
+	}
 	if err := tx.vm.putContractBytes(db, tx.id, tx.ContractBytes); err != nil {
 		return fmt.Errorf("couldn't put new contract in db: %v", err)
 	}
