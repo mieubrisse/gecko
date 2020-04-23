@@ -2,10 +2,12 @@ package wasmvm
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/ava-labs/gecko/snow/choices"
 
+	"github.com/ava-labs/gecko/utils/crypto"
 	"github.com/ava-labs/gecko/utils/formatting"
 
 	"github.com/ava-labs/gecko/utils/hashing"
@@ -21,9 +23,15 @@ type createContractTx struct {
 	// ID of this tx and the contract being created
 	id ids.ID
 
+	// sender of this transaction
+	sender ids.ShortID
+
 	// Byte repr. of the contract
 	// Must be valid WASM
 	ContractBytes []byte `serialize:"true"`
+
+	// Signature of the sender of this transaction
+	SenderSig [crypto.SECP256K1RSigLen]byte `serialize:"true"`
 
 	// Byte repr. of this tx
 	bytes []byte
@@ -40,15 +48,32 @@ func (tx *createContractTx) ID() ids.ID {
 	return tx.id
 }
 
-// should be called when unmarshaling
+// Should be called when unmarshaling
+// Should be called before any of this tx's methods or fields are accessed
+// Sets tx.vm, tx.bytes, tx.id, tx.sender
 func (tx *createContractTx) initialize(vm *VM) error {
 	tx.vm = vm
+
+	// Compute the byte repr. of this tx
 	var err error
 	tx.bytes, err = codec.Marshal(tx)
 	if err != nil {
 		return fmt.Errorf("couldn't marshal *createContractTx: %v", err)
 	}
+
+	// Compute the ID of this tx
 	tx.id = ids.NewID(hashing.ComputeHash256Array(tx.bytes))
+
+	// Compute the sender of this tx
+	unsignedBytes, err := codec.Marshal(tx.ContractBytes)
+	if err != nil {
+		return fmt.Errorf("couldn't marshal createContractTx: %v", err)
+	}
+	pubKey, err := keyFactory.RecoverPublicKey(unsignedBytes, tx.SenderSig[:])
+	if err != nil {
+		return fmt.Errorf("couldn't recover public key on createContractTx: %v", err)
+	}
+	tx.sender = pubKey.Address()
 	return nil
 }
 
@@ -59,6 +84,8 @@ func (tx *createContractTx) SyntacticVerify() error {
 		return fmt.Errorf("empty contract")
 	case tx.id.Equals(ids.Empty):
 		return fmt.Errorf("empty tx ID")
+	case tx.sender.Equals(ids.ShortEmpty):
+		return errors.New("empty sender")
 	}
 	return nil
 }
@@ -81,11 +108,16 @@ func (tx *createContractTx) SemanticVerify(db database.Database) error {
 }
 
 // Creates a new tx with the given payload and a random ID
-func (vm *VM) newCreateContractTx(contractBytes []byte) (*createContractTx, error) {
+func (vm *VM) newCreateContractTx(contractBytes []byte, senderKey crypto.PrivateKey) (*createContractTx, error) {
 	tx := &createContractTx{
-		vm:            vm,
 		ContractBytes: contractBytes,
 	}
+	// Generate signature
+	sig, err := senderKey.Sign(tx.ContractBytes)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't sign createContractTx: %v", err)
+	}
+	copy(tx.SenderSig[:], sig[:]) // Put signature on tx
 	if err := tx.initialize(vm); err != nil {
 		return nil, err
 	}
@@ -93,8 +125,9 @@ func (vm *VM) newCreateContractTx(contractBytes []byte) (*createContractTx, erro
 }
 
 func (tx *createContractTx) MarshalJSON() ([]byte, error) {
-	asMap := make(map[string]interface{}, 2)
+	asMap := make(map[string]interface{}, 4)
 	asMap["id"] = tx.ID().String()
+	asMap["sender"] = tx.sender.String()
 	byteFormatter := formatting.CB58{Bytes: tx.ContractBytes}
 	asMap["contract"] = byteFormatter.String()
 	return json.Marshal(asMap)

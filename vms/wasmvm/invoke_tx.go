@@ -39,7 +39,6 @@ type UnsignedInvokeTx struct {
 	id ids.ID
 
 	// Sender of this tx (the address invoking the contract)
-	// Should only be retrieved through getSender()
 	sender ids.ShortID
 
 	// ID of contract to invoke
@@ -111,12 +110,6 @@ func (tx *invokeTx) SyntacticVerify() error {
 // containing only 1 (ie []byte{1}) and the value is the return value of the method.
 // A SC method need not do this. Such a method will be considered to have returned "void".
 func (tx *invokeTx) SemanticVerify(db database.Database) error {
-	// Get the sender of this transaction
-	sender, err := tx.getSender()
-	if err != nil {
-		return fmt.Errorf("couldn't get transaction sender: %v", err)
-	}
-
 	// Get the contract and its state
 	contract, err := tx.vm.getContract(db, tx.ContractID)
 	if err != nil {
@@ -134,7 +127,7 @@ func (tx *invokeTx) SemanticVerify(db database.Database) error {
 		contractDb: contractDb,
 		memory:     contract.Memory,
 		txID:       tx.ID(),
-		sender:     sender,
+		sender:     tx.sender,
 	})
 
 	// Get the function to call
@@ -190,33 +183,32 @@ func (tx *invokeTx) SemanticVerify(db database.Database) error {
 	return nil
 }
 
-// Set tx.vm, tx.bytes, tx.id, tx.unsignedBytes
+// Set tx.vm, tx.bytes, tx.id, tx.unsignedBytes, tx.sender
+// Should be called before any other methods/fields of tx are used
 func (tx *invokeTx) initialize(vm *VM) error {
 	tx.vm = vm
+
+	// Compute the byte repr. of this tx
 	var err error
 	tx.bytes, err = codec.Marshal(tx)
 	if err != nil {
 		return fmt.Errorf("couldn't marshal invokeTx: %v", err)
 	}
-	tx.id = ids.NewID(hashing.ComputeHash256Array(tx.bytes))
-	return nil
-}
 
-// Get the sender of this tx (the address whose public key signed it)
-func (tx *invokeTx) getSender() (ids.ShortID, error) {
-	if tx.sender.Equals(ids.ShortEmpty) {
-		return tx.sender, nil
-	}
+	// Compute the ID of this tx
+	tx.id = ids.NewID(hashing.ComputeHash256Array(tx.bytes))
+
+	// Compute the sender of this tx
 	unsignedBytes, err := codec.Marshal(tx.UnsignedInvokeTx)
 	if err != nil {
-		return ids.ShortEmpty, fmt.Errorf("couldn't marshal UnsignedInvokeTx: %v", err)
+		return fmt.Errorf("couldn't marshal UnsignedInvokeTx: %v", err)
 	}
 	pubKey, err := keyFactory.RecoverPublicKey(unsignedBytes, tx.SenderSig[:])
 	if err != nil {
-		return ids.ShortEmpty, fmt.Errorf("couldn't recover public key on invokeTx: %v", err)
+		return fmt.Errorf("couldn't recover public key on invokeTx: %v", err)
 	}
 	tx.sender = pubKey.Address()
-	return tx.sender, nil
+	return nil
 }
 
 // Creates a new, initialized tx
@@ -252,11 +244,7 @@ func (tx *invokeTx) MarshalJSON() ([]byte, error) {
 	asMap["contractID"] = tx.ContractID.String()
 	asMap["function"] = tx.FunctionName
 	asMap["arguments"] = tx.Arguments
-	sender, err := tx.getSender()
-	if err != nil {
-		return nil, fmt.Errorf("couldn't get tx signer: %v", err)
-	}
-	asMap["sender"] = sender.String()
+	asMap["sender"] = tx.sender.String()
 	asMap["id"] = tx.id.String()
 	byteArgs := formatting.CB58{Bytes: tx.ByteArguments}
 	asMap["byteArguments"] = byteArgs.String()

@@ -97,7 +97,7 @@ type InvokeArgs struct {
 	// Function in contract to invoke
 	Function string `json:"function"`
 	// Private Key signing the invocation tx
-	// This key's address is the "sender"
+	// This key's address is the "sender" of the tx
 	// Must be byte repr. of a SECP256K1R private key
 	PrivateKey formatting.CB58 `json:"privateKey"`
 	// Integer arguments to the function
@@ -160,6 +160,10 @@ type CreateContractArgs struct {
 	// The byte representation of the contract.
 	// Must be a valid wasm file.
 	Contract formatting.CB58 `json:"contract"`
+
+	// Byte repr. of the private key of the sender of this tx
+	// Should be a SECP256K1R private key
+	PrivateKey formatting.CB58 `json:"privateKey"`
 }
 
 // CreateContract creates a new contract
@@ -167,7 +171,12 @@ type CreateContractArgs struct {
 func (s *Service) CreateContract(_ *http.Request, args *CreateContractArgs, response *ids.ID) error {
 	s.vm.Ctx.Log.Debug("in createContract")
 
-	tx, err := s.vm.newCreateContractTx(args.Contract.Bytes)
+	privateKey, err := keyFactory.ToPrivateKey(args.PrivateKey.Bytes)
+	if err != nil {
+		return fmt.Errorf("couldn't parse 'privateKey' to a SECP256K1R private key: %v", err)
+	}
+
+	tx, err := s.vm.newCreateContractTx(args.Contract.Bytes, privateKey)
 	if err != nil {
 		return fmt.Errorf("couldn't create tx: %v", err)
 	}
