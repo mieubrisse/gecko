@@ -38,6 +38,10 @@ type UnsignedInvokeTx struct {
 	// ID of this tx
 	id ids.ID
 
+	// Sender of this tx (the address invoking the contract)
+	// Should only be retrieved through getSender()
+	sender ids.ShortID
+
 	// ID of contract to invoke
 	ContractID ids.ID `serialize:"true"`
 
@@ -143,10 +147,6 @@ func (tx *invokeTx) SemanticVerify(db database.Database) error {
 	if err := contractDb.Put(argsKey, tx.ByteArguments); err != nil {
 		return fmt.Errorf("couldn't set byte arguments: %v", err)
 	}
-	senderBytes := sender.Key()
-	if err := contractDb.Put(senderKey, senderBytes[:]); err != nil {
-		return fmt.Errorf("couldn't set sender: %v", err)
-	}
 	db.Delete(returnKey) // Clear the old return value
 
 	// Call the function
@@ -204,6 +204,9 @@ func (tx *invokeTx) initialize(vm *VM) error {
 
 // Get the sender of this tx (the address whose public key signed it)
 func (tx *invokeTx) getSender() (ids.ShortID, error) {
+	if tx.sender.Equals(ids.ShortEmpty) {
+		return tx.sender, nil
+	}
 	unsignedBytes, err := codec.Marshal(tx.UnsignedInvokeTx)
 	if err != nil {
 		return ids.ShortEmpty, fmt.Errorf("couldn't marshal UnsignedInvokeTx: %v", err)
@@ -212,7 +215,8 @@ func (tx *invokeTx) getSender() (ids.ShortID, error) {
 	if err != nil {
 		return ids.ShortEmpty, fmt.Errorf("couldn't recover public key on invokeTx: %v", err)
 	}
-	return pubKey.Address(), nil
+	tx.sender = pubKey.Address()
+	return tx.sender, nil
 }
 
 // Creates a new, initialized tx
@@ -244,10 +248,16 @@ func (vm *VM) newInvokeTx(contractID ids.ID, functionName string, args []interfa
 }
 
 func (tx *invokeTx) MarshalJSON() ([]byte, error) {
-	asMap := make(map[string]interface{}, 4)
+	asMap := make(map[string]interface{}, 6)
 	asMap["contractID"] = tx.ContractID.String()
 	asMap["function"] = tx.FunctionName
 	asMap["arguments"] = tx.Arguments
+	sender, err := tx.getSender()
+	if err != nil {
+		return nil, fmt.Errorf("couldn't get tx signer: %v", err)
+	}
+	asMap["sender"] = sender.String()
+	asMap["id"] = tx.id.String()
 	byteArgs := formatting.CB58{Bytes: tx.ByteArguments}
 	asMap["byteArguments"] = byteArgs.String()
 	return json.Marshal(asMap)

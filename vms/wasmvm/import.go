@@ -7,6 +7,8 @@ package wasmvm
 // int dbGetValueLen(void *context, int keyPtr, int keyLen);
 // int getArgs(void *context, int ptr);
 // int getSender(void *context, int ptr);
+// int dbDelete(void *context, int keyPtr, int valuePtr);
+// int getTxID(void *context, int ptr);
 import "C"
 import (
 	"fmt"
@@ -101,7 +103,7 @@ func dbPut(context unsafe.Pointer, keyPtr C.int, keyLen C.int, valuePtr C.int, v
 	return 0
 }
 
-// Get a value from the database. The key is in the contract's memory.
+// Get a value from the contract's database. The key is in the contract's memory.
 // It starts at [keyPtr] and is [keyLen] bytes long.
 // The value is written to the contract's memory starting at [valuePtr]
 // Returns the length of the returned value, or -1 if the get failed.
@@ -135,6 +137,40 @@ func dbGet(context unsafe.Pointer, keyPtr C.int, keyLen C.int, valuePtr C.int) C
 	ctx.log.Verbo("dbGet returning\n  key: %v\n value: %v\n", key, value)
 	copy(contractState[valuePtr:], value)
 	return C.int(len(value))
+}
+
+// Delete a value from the contract's database.
+// The key to delete is in the contract's memory at [keyPtr, keyPtr+keyLen]
+// Returns 0 on success, otherwise non-zero
+//export dbDelete
+func dbDelete(context unsafe.Pointer, keyPtr C.int, keyLen C.int) C.int {
+	// Get the context
+	ctxRaw := wasm.IntoInstanceContext(context)
+	ctx := ctxRaw.Data().(ctx)
+
+	// Validate arguments
+	if keyPtr < 0 || keyLen < 0 {
+		ctx.log.Error("dbDelete failed. Key pointer and length must be non-negative")
+		return -1
+	}
+	if keyLen > maxSize {
+		ctx.log.Error("dbDelete failed. Key size, %v, exceeds maxSize, %v", keyLen, maxSize)
+		return -1
+	}
+	contractState := ctx.memory.Data()
+	keyFinalIndex, err := math.Add32(uint32(keyPtr), uint32(keyLen))
+	if err != nil || int(keyFinalIndex) > len(contractState) {
+		ctx.log.Error("dbDelete failed. Key index out of bounds")
+		return -1
+	}
+
+	// Delete the KV pair
+	key := contractState[keyPtr:keyFinalIndex]
+	ctx.log.Verbo("Deleting key %v from contact db: %v", key)
+	if err := ctx.contractDb.Delete(key); err != nil {
+		return 1
+	}
+	return 0
 }
 
 // Get the length in bytes of the value associated with a key in the database.
@@ -177,16 +213,8 @@ func getSender(context unsafe.Pointer, ptr C.int) C.int {
 	ctxRaw := wasm.IntoInstanceContext(context)
 	ctx := ctxRaw.Data().(ctx)
 
-	// Get the sender
-	sender, err := ctx.contractDb.Get(senderKey)
-	if err != nil {
-		ctx.log.Error("getSender failed. Couldn't get sender: %v", err)
-		return -1
-	}
-	if senderLen := len(sender); senderLen != addressSize {
-		ctx.log.Error("getSender failed. Expected sender address to be %v bytes but got %v", addressSize, senderLen)
-		return -1
-	}
+	// Get the sender's ID
+	sender := ctx.sender.Key()
 
 	// Check for array bounds
 	contractState := ctx.memory.Data()
@@ -197,7 +225,33 @@ func getSender(context unsafe.Pointer, ptr C.int) C.int {
 	}
 
 	// Write the sender's address
-	copy(contractState[ptr:], sender)
+	copy(contractState[ptr:], sender[:])
+	return 0
+}
+
+// Write the ID of the transaction that triggered this contract invocation to the contract's memory, starting at [ptr]
+// The contract's memory must be able to fit 32 bytes, starting at [ptr]
+// The address is guaranteed to be 32 bytes
+// Returns 0 on success, other return value indicates failure
+//export getTxID
+func getTxID(context unsafe.Pointer, ptr C.int) C.int {
+	// Get the context
+	ctxRaw := wasm.IntoInstanceContext(context)
+	ctx := ctxRaw.Data().(ctx)
+
+	// Get the tx ID
+	txID := ctx.txID.Key()
+
+	// Check for array bounds
+	contractState := ctx.memory.Data()
+	finalIndex, err := math.Add32(uint32(ptr), uint32(len(txID)))
+	if err != nil || int(finalIndex) > len(contractState) {
+		ctx.log.Error("getTxID failed. Index out of bounds")
+		return 1
+	}
+
+	// Write the tx ID
+	copy(contractState[ptr:], txID[:])
 	return 0
 }
 
@@ -289,6 +343,10 @@ func standardImports() *wasm.Imports {
 	if err != nil {
 		panic(fmt.Sprintf("couldn't add dbGetValueLen import: %v", err))
 	}
+	imports, err = imports.AppendFunction("dbDelete", dbDelete, C.dbDelete)
+	if err != nil {
+		panic(fmt.Sprintf("couldn't add dbDelete import: %v", err))
+	}
 	imports, err = imports.AppendFunction("returnValue", returnValue, C.returnValue)
 	if err != nil {
 		panic(fmt.Sprintf("couldn't add returnValue import: %v", err))
@@ -300,6 +358,10 @@ func standardImports() *wasm.Imports {
 	imports, err = imports.AppendFunction("getSender", getSender, C.getSender)
 	if err != nil {
 		panic(fmt.Sprintf("couldn't add getSender import: %v", err))
+	}
+	imports, err = imports.AppendFunction("getTxID", getTxID, C.getTxID)
+	if err != nil {
+		panic(fmt.Sprintf("couldn't add getTxID import: %v", err))
 	}
 	return imports
 }
