@@ -10,8 +10,6 @@ import (
 
 	"github.com/wasmerio/go-ext-wasm/wasmer"
 
-	"github.com/ava-labs/gecko/snow/choices"
-
 	"github.com/ava-labs/gecko/database/prefixdb"
 
 	"github.com/ava-labs/gecko/utils/hashing"
@@ -140,27 +138,30 @@ func (tx *invokeTx) SemanticVerify(db database.Database) error {
 	db.Delete(returnKey) // Clear the old return value
 
 	// Call the function
+	success := false // True if the function executes successfully
 	val, err := fn(tx.Arguments...)
-	if err != nil {
-		// TODO: How to handle errors during method invocation?
-		return fmt.Errorf("error during call to function '%s': %v", tx.FunctionName, err)
+	if err == nil {
+		// See if invocation was successful
+		// Return value of 0 is interpreted as success, all other values as failure.
+		switch val.GetType() {
+		case wasmer.TypeI32:
+			success = val.ToI32() == int32(0)
+		case wasmer.TypeI64:
+			success = val.ToI64() == int64(0)
+		}
 	}
 
-	// See if invocation was successful
-	var success bool
-	switch val.GetType() {
-	case wasmer.TypeI32:
-		success = val.ToI32() == int32(0)
-	case wasmer.TypeI64:
-		success = val.ToI64() == int64(0)
-	default:
-		return fmt.Errorf("smart contract method must return int32 or int64")
+	if success {
+		tx.vm.Ctx.Log.Debug("call to method '%s' of contract %s succeeded", tx.FunctionName, tx.ContractID)
+	} else {
+		tx.vm.Ctx.Log.Debug("call to method '%s' of contract %s errored", tx.FunctionName, tx.ContractID)
 	}
-	tx.vm.Ctx.Log.Info("call to '%s' returned: %v", tx.FunctionName, val)
 
-	// Save the contract's state
-	if err := tx.vm.putContractState(db, tx.ContractID, contract.Memory.Data()); err != nil {
-		return fmt.Errorf("couldn't save contract's state: %v", err)
+	// If the method invocation succeeded, save the contract's state
+	if success {
+		if err := tx.vm.putContractState(db, tx.ContractID, contract.Memory.Data()); err != nil {
+			return fmt.Errorf("couldn't save contract's state: %v", err)
+		}
 	}
 
 	// Persist the transaction and its return value
@@ -168,9 +169,8 @@ func (tx *invokeTx) SemanticVerify(db database.Database) error {
 	if val, err := contractDb.Get(returnKey); err == nil {
 		returnValue = val
 	}
-	rv := &txReturnValue{ // TODO: persist tx in every execution of this method
+	rv := &txReturnValue{
 		Tx:                   tx,
-		Status:               choices.Accepted,
 		InvocationSuccessful: success,
 		ReturnValue:          returnValue,
 	}

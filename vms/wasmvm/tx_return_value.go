@@ -3,7 +3,6 @@ package wasmvm
 import (
 	"encoding/json"
 
-	"github.com/ava-labs/gecko/snow/choices"
 	"github.com/ava-labs/gecko/utils/formatting"
 )
 
@@ -14,8 +13,6 @@ type txReturnValue struct {
 
 	// The transaction itself
 	Tx tx `serialize:"true"`
-	// Status of the transaction
-	choices.Status `serialize:"true"`
 	// True if Tx is an invokeTx and the SC method invocation was successful
 	// Otherwise false
 	InvocationSuccessful bool `serialize:"true"`
@@ -34,9 +31,8 @@ func (rv *txReturnValue) Bytes() []byte {
 }
 
 func (rv *txReturnValue) MarshalJSON() ([]byte, error) {
-	asMap := make(map[string]interface{}, 6)
+	asMap := make(map[string]interface{}, 5)
 	asMap["tx"] = rv.Tx
-	asMap["status"] = rv.Status.String()
 	switch rv.Tx.(type) {
 	case *invokeTx:
 		asMap["type"] = "contract invocation"

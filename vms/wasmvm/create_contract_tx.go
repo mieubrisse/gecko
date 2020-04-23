@@ -7,8 +7,6 @@ import (
 
 	wasm "github.com/wasmerio/go-ext-wasm/wasmer"
 
-	"github.com/ava-labs/gecko/snow/choices"
-
 	"github.com/ava-labs/gecko/utils/crypto"
 	"github.com/ava-labs/gecko/utils/formatting"
 
@@ -104,8 +102,7 @@ func (tx *createContractTx) SemanticVerify(db database.Database) error {
 		return fmt.Errorf("couldn't initialize contract's state in db: %v", err)
 	}
 	persistedTx := &txReturnValue{ // TODO: always persist the tx, even if it was unsuccessful
-		Tx:     tx,
-		Status: choices.Accepted,
+		Tx: tx,
 	}
 	if err := tx.vm.putTx(db, persistedTx); err != nil {
 		return err
