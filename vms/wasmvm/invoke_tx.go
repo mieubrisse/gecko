@@ -245,6 +245,6 @@ func (tx *invokeTx) MarshalJSON() ([]byte, error) {
 	asMap["sender"] = tx.sender.String()
 	asMap["id"] = tx.id.String()
 	byteArgs := formatting.CB58{Bytes: tx.ByteArguments}
-	asMap["byteArguments"] = byteArgs.String()
+	asMap["byteArgs"] = byteArgs.String()
 	return json.Marshal(asMap)
 }
