@@ -12,10 +12,10 @@ import (
 
 	"github.com/ava-labs/gecko/database/prefixdb"
 
-	"github.com/ava-labs/gecko/utils/hashing"
-
 	"github.com/ava-labs/gecko/database"
 	"github.com/ava-labs/gecko/ids"
+	"github.com/ava-labs/gecko/utils/hashing"
+	jsonhelper "github.com/ava-labs/gecko/utils/json"
 )
 
 var (
@@ -34,7 +34,7 @@ type UnsignedInvokeTx struct {
 	id ids.ID
 
 	// Sender of this tx (the address invoking the contract)
-	sender ids.ShortID
+	senderAddress ids.ShortID
 
 	// ID of contract to invoke
 	ContractID ids.ID `serialize:"true"`
@@ -48,6 +48,9 @@ type UnsignedInvokeTx struct {
 	// Byte arguments to pass to the method
 	// Should be in the form of a JSON
 	ByteArguments []byte `serialize:"true"`
+
+	// Next unused nonce of this transaction's sender
+	SenderNonce uint64 `serialize:"true"`
 }
 
 // invokes a function of a contract
@@ -105,6 +108,21 @@ func (tx *invokeTx) SyntacticVerify() error {
 // containing only 1 (ie []byte{1}) and the value is the return value of the method.
 // A SC method need not do this. Such a method will be considered to have returned "void".
 func (tx *invokeTx) SemanticVerify(db database.Database) error {
+	// Ensure the tx's nonce matches the sender's next unused nonce
+	sender, err := tx.vm.getAccount(db, tx.senderAddress) // Get the sender
+	if err != nil {                                       // Account not found...must not exist yet. Create it.
+		sender = &Account{Address: tx.senderAddress, Nonce: 0}
+	}
+	if err := sender.IncrementNonce(); err != nil { // Get sender's next unused nonce
+		return fmt.Errorf("couldn't increment sender's nonce: %v", err)
+	}
+	if sender.Nonce != tx.SenderNonce { // Make sure nonce in tx is correct
+		return fmt.Errorf("expected sender's next unused nonce to be %d but was %d", tx.SenderNonce, sender.Nonce)
+	}
+	if err := tx.vm.putAccount(db, sender); err != nil {
+		return fmt.Errorf("couldn't persist sender: %v", err)
+	}
+
 	// Get the contract and its state
 	contract, err := tx.vm.getContract(db, tx.ContractID)
 	if err != nil {
@@ -122,7 +140,7 @@ func (tx *invokeTx) SemanticVerify(db database.Database) error {
 		contractDb: contractDb,
 		memory:     contract.Memory,
 		txID:       tx.ID(),
-		sender:     tx.sender,
+		sender:     tx.senderAddress,
 	})
 
 	// Get the function to call
@@ -137,9 +155,8 @@ func (tx *invokeTx) SemanticVerify(db database.Database) error {
 	}
 	db.Delete(returnKey) // Clear the old return value
 
-	// Call the function
-	success := false // True if the function executes successfully
-	val, err := fn(tx.Arguments...)
+	success := false                // True if the function executes successfully
+	val, err := fn(tx.Arguments...) // Call the function
 	if err == nil {
 		// See if invocation was successful
 		// Return value of 0 is interpreted as success, all other values as failure.
@@ -205,12 +222,12 @@ func (tx *invokeTx) initialize(vm *VM) error {
 	if err != nil {
 		return fmt.Errorf("couldn't recover public key on invokeTx: %v", err)
 	}
-	tx.sender = pubKey.Address()
+	tx.senderAddress = pubKey.Address()
 	return nil
 }
 
 // Creates a new, initialized tx
-func (vm *VM) newInvokeTx(contractID ids.ID, functionName string, args []interface{}, byteArgs []byte, key crypto.PrivateKey) (*invokeTx, error) {
+func (vm *VM) newInvokeTx(contractID ids.ID, functionName string, args []interface{}, byteArgs []byte, senderNonce uint64, senderKey crypto.PrivateKey) (*invokeTx, error) {
 	tx := &invokeTx{
 		UnsignedInvokeTx: UnsignedInvokeTx{
 			vm:            vm,
@@ -218,6 +235,7 @@ func (vm *VM) newInvokeTx(contractID ids.ID, functionName string, args []interfa
 			FunctionName:  functionName,
 			Arguments:     args,
 			ByteArguments: byteArgs,
+			SenderNonce:   senderNonce,
 		},
 	}
 	// Sign the tx
@@ -225,7 +243,7 @@ func (vm *VM) newInvokeTx(contractID ids.ID, functionName string, args []interfa
 	if err != nil {
 		return nil, fmt.Errorf("couldn't marshal UnsignedInvokeTx: %v", err)
 	}
-	sig, err := key.Sign(unsignedBytes)
+	sig, err := senderKey.Sign(unsignedBytes)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't sign UnsignedInvokeTx: %v", err)
 	}
@@ -238,12 +256,13 @@ func (vm *VM) newInvokeTx(contractID ids.ID, functionName string, args []interfa
 }
 
 func (tx *invokeTx) MarshalJSON() ([]byte, error) {
-	asMap := make(map[string]interface{}, 6)
+	asMap := make(map[string]interface{}, 7)
 	asMap["contractID"] = tx.ContractID.String()
 	asMap["function"] = tx.FunctionName
 	asMap["arguments"] = tx.Arguments
-	asMap["sender"] = tx.sender.String()
+	asMap["sender"] = tx.senderAddress.String()
 	asMap["id"] = tx.id.String()
+	asMap["senderNonce"] = jsonhelper.Uint64(tx.SenderNonce)
 	byteArgs := formatting.CB58{Bytes: tx.ByteArguments}
 	asMap["byteArgs"] = byteArgs.String()
 	return json.Marshal(asMap)

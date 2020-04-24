@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/ava-labs/gecko/utils/crypto"
 	"github.com/ava-labs/gecko/utils/formatting"
+	"github.com/ava-labs/gecko/utils/json"
 
 	"github.com/ava-labs/gecko/ids"
 	"github.com/ava-labs/gecko/snow/engine/common"
@@ -99,7 +101,9 @@ type InvokeArgs struct {
 	// Private Key signing the invocation tx
 	// This key's address is the "sender" of the tx
 	// Must be byte repr. of a SECP256K1R private key
-	PrivateKey formatting.CB58 `json:"privateKey"`
+	SenderKey formatting.CB58 `json:"senderKey"`
+	// Sender's next unused nonce
+	SenderNonce json.Uint64 `json:"senderNonce"`
 	// Integer arguments to the function
 	Args []ArgAPI `json:"args"`
 	// Byte arguments to the function
@@ -107,13 +111,18 @@ type InvokeArgs struct {
 }
 
 func (args *InvokeArgs) validate() error {
-	if args.ContractID.Equals(ids.Empty) {
+	switch {
+	case len(args.SenderKey.Bytes) == 0:
+		return errors.New("argument 'senderKey' not provided")
+	case uint64(args.SenderNonce) == 0:
+		return errors.New("'senderNonce' must be at least 1")
+	case args.ContractID.Equals(ids.Empty):
 		return errors.New("contractID not specified")
-	}
-	if args.Function == "" {
+	case args.Function == "":
 		return errors.New("function not specified")
+	default:
+		return nil
 	}
-	return nil
 }
 
 // InvokeResponse ...
@@ -137,12 +146,16 @@ func (s *Service) Invoke(_ *http.Request, args *InvokeArgs, response *InvokeResp
 		}
 	}
 
-	privateKey, err := keyFactory.ToPrivateKey(args.PrivateKey.Bytes)
+	senderKeyIntf, err := keyFactory.ToPrivateKey(args.SenderKey.Bytes)
 	if err != nil {
 		return fmt.Errorf("couldn't parse 'privateKey' to a SECP256K1R private key: %v", err)
 	}
+	senderKey, ok := senderKeyIntf.(*crypto.PrivateKeySECP256K1R)
+	if !ok {
+		return fmt.Errorf("couldn't parse 'privateKey' to a SECP256K1R private key: %v", err)
+	}
 
-	tx, err := s.vm.newInvokeTx(args.ContractID, args.Function, fnArgs, args.ByteArgs.Bytes, privateKey)
+	tx, err := s.vm.newInvokeTx(args.ContractID, args.Function, fnArgs, args.ByteArgs.Bytes, uint64(args.SenderNonce), senderKey)
 	if err != nil {
 		return fmt.Errorf("couldn't create tx: %s", err)
 	}
@@ -163,7 +176,10 @@ type CreateContractArgs struct {
 
 	// Byte repr. of the private key of the sender of this tx
 	// Should be a SECP256K1R private key
-	PrivateKey formatting.CB58 `json:"privateKey"`
+	SenderKey formatting.CB58 `json:"senderKey"`
+
+	// Next unused nonce of the sender
+	SenderNonce json.Uint64 `json:"senderNonce"`
 }
 
 // CreateContract creates a new contract
@@ -171,12 +187,29 @@ type CreateContractArgs struct {
 func (s *Service) CreateContract(_ *http.Request, args *CreateContractArgs, response *ids.ID) error {
 	s.vm.Ctx.Log.Debug("in createContract")
 
-	privateKey, err := keyFactory.ToPrivateKey(args.PrivateKey.Bytes)
-	if err != nil {
-		return fmt.Errorf("couldn't parse 'privateKey' to a SECP256K1R private key: %v", err)
+	// validation
+	if len(args.SenderKey.Bytes) == 0 {
+		return errors.New("argument 'senderKey' not given")
+	}
+	if len(args.Contract.Bytes) == 0 {
+		return errors.New("argument 'contract' not given")
+	}
+	if uint64(args.SenderNonce) == 0 {
+		return errors.New("argument 'senderNonce' must be at least 1")
 	}
 
-	tx, err := s.vm.newCreateContractTx(args.Contract.Bytes, privateKey)
+	// Parse key
+	senderKeyIntf, err := keyFactory.ToPrivateKey(args.SenderKey.Bytes)
+	if err != nil {
+		return fmt.Errorf("couldn't parse 'senderKey' to a SECP256K1R private key: %v", err)
+	}
+	senderKey, ok := senderKeyIntf.(*crypto.PrivateKeySECP256K1R)
+	if !ok {
+		return fmt.Errorf("couldn't parse 'senderKey' to a SECP256K1R private key: %v", err)
+	}
+
+	// Create tx
+	tx, err := s.vm.newCreateContractTx(args.Contract.Bytes, uint64(args.SenderNonce), senderKey)
 	if err != nil {
 		return fmt.Errorf("couldn't create tx: %v", err)
 	}
