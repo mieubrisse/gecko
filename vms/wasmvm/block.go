@@ -25,21 +25,36 @@ type Block struct {
 func (b *Block) Initialize(bytes []byte, vm *VM) {
 	b.vm = vm
 	b.Block.Initialize(bytes, vm.SnowmanVM)
+	for _, tx := range b.Txs {
+		if err := tx.initialize(vm); err != nil {
+			vm.Ctx.Log.Error("couldn't initialize tx: %v", err)
+		}
+	}
 }
 
 // Accept this block
 func (b *Block) Accept() {
-	b.onAcceptDb.Commit()
-	b.onAcceptDb.Close()
+	if err := b.onAcceptDb.Commit(); err != nil {
+		b.vm.Ctx.Log.Error("couldn't commit onAcceptDb: %v", err)
+	}
+	if err := b.onAcceptDb.Close(); err != nil {
+		b.vm.Ctx.Log.Error("couldn't close onAcceptDb: %v", err)
+	}
 	b.Block.Accept()
-	b.vm.DB.Commit()
+	if err := b.vm.DB.Commit(); err != nil {
+		b.vm.Ctx.Log.Error("couldn't commit vm.DB: %v", err)
+	}
 }
 
 // Reject this block
 func (b *Block) Reject() {
-	b.onAcceptDb.Close()
+	if err := b.onAcceptDb.Close(); err != nil {
+		b.vm.Ctx.Log.Error("couldn't close onAcceptDb: %v", err)
+	}
 	b.Block.Reject()
-	b.vm.DB.Commit()
+	if err := b.vm.DB.Commit(); err != nil {
+		b.vm.Ctx.Log.Error("couldn't commit vm.DB: %v", err)
+	}
 }
 
 // Verify returns nil iff this block is valid
