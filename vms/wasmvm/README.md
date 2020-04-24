@@ -31,6 +31,34 @@ To compile the Rust code to WASM, we use the [wasm-pack](https://rustwasm.github
 wasm-pack build
 ```
 
+## Creating a Private Key
+
+Transactions are signed by private keys. Before we create any transactions, we need a new private key.
+To get one, we call `wasm.newKey`:
+
+```sh
+curl --location --request POST 'localhost:9650/ext/bc/wasm' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+    "jsonrpc": "2.0",
+    "method": "wasm.newKey",
+    "params": {},
+    "id": 1
+}'
+```
+
+The response contains a new private key, which we'll use to sign transaction on-chain transactions.
+
+```json
+{
+    "jsonrpc": "2.0",
+    "result": {
+        "privateKey": "TAThYDSzzn7fLeutQcCWqAUNi8xsfgUBehDJ1rsXhwVpvizqE"
+    },
+    "id": 1
+}
+```
+
 ## Uploading a Smart Contract
 
 To upload a smart contract, call `wasm.createContract`.
@@ -176,7 +204,6 @@ That is, this method received no `byteArguments` and returned nothing (void.)
         "tx": {
             "invocationSuccessful": true,
             "returnValue": "45PJLL",
-            "status": "Accepted",
             "tx": {
                 "arguments": [
                     1

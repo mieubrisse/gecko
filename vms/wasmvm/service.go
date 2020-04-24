@@ -32,14 +32,14 @@ type Service struct {
 	vm *VM
 }
 
-// CreateAccountResponse ...
-type CreateAccountResponse struct {
+// NewKeyResponse ...
+type NewKeyResponse struct {
 	// A new private key
 	Key formatting.CB58 `json:"privateKey"`
 }
 
-// CreateAccount returns a new private key
-func (s *Service) CreateAccount(_ *http.Request, args *struct{}, response *CreateAccountResponse) error {
+// NewKey returns a new private key
+func (s *Service) NewKey(_ *http.Request, args *struct{}, response *NewKeyResponse) error {
 	key, err := keyFactory.NewPrivateKey()
 	if err != nil {
 		return fmt.Errorf("couldn't create new private key: %v", err)
