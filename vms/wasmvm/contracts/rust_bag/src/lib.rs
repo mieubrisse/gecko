@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use lazy_static::lazy_static;
 use std::sync::Mutex;
+use serde_json::{Value,json};
 
 extern "C" {
     fn print(ptr: u32, len: u32);
@@ -108,20 +109,42 @@ pub extern fn update_bag_price(id: u32, price: u32) -> i32 {
 pub extern fn get_bag_price(id: u32) -> i32 {
     unsafe {
         if let Some(bag) = BAGS.lock().unwrap().get(&id) {
-            returnValue(bag.price.to_be_bytes().as_ptr() as u32, 4)
+            let response = json!({
+                "bagID": bag.id,
+                "price": bag.price
+            });
+            let response = serde_json::to_vec(&response);
+            match response {
+                Ok(json) => {
+                    let ptr = json.as_ptr();
+                    returnValue(ptr as u32, json.len() as u32)
+                },
+                Err(_) => 1
+            }
         } else {
             1
         }
     }
 }
 
-// Return the number of bags the specified owner owns
+// Return the owner with the specified ID
 // Returns 1 if the owner doesn't exist
 #[no_mangle]
-pub extern fn get_num_bags(id: u32) -> i32 {
+pub extern fn get_owner(id: u32) -> i32 {
     unsafe {
         if let Some(owner) = OWNERS.lock().unwrap().get(&id) {
-            returnValue(owner.bags.len().to_be_bytes().as_ptr() as u32, 4)
+            let response = json!({
+                "ownerID": owner.id,
+                "bags": owner.bags
+            });
+            let response = serde_json::to_vec(&response);
+            match response {
+                Ok(json) => {
+                    let ptr = json.as_ptr();
+                    returnValue(ptr as u32, json.len() as u32)
+                },
+                Err(_) => 1
+            }
         } else {
             1
         }
@@ -131,10 +154,29 @@ pub extern fn get_num_bags(id: u32) -> i32 {
 // Return the ID of the owner of the specified bag
 // Returns 1 if the bag doesn't exist
 #[no_mangle]
-pub extern fn get_owner(id: u32) -> i32 {
+pub extern fn get_bag(id: u32) -> i32 {
     unsafe {
         if let Some(bag) = BAGS.lock().unwrap().get(&id) {
-            returnValue(bag.owner_id.to_be_bytes().as_ptr() as u32, 4)
+            let condition = match bag.condition {
+                Condition::New => "new",
+                Condition::Good => "good",
+                Condition::Bad => "bad",
+                Condition::Destroyed => "destroyed"
+            };
+            let response = json!({
+                "ID": bag.id,
+                "price": bag.price,
+                "ownerID": bag.owner_id,
+                "condition": condition
+            });
+            let response = serde_json::to_vec(&response);
+            match response {
+                Ok(json) => {
+                    let ptr = json.as_ptr();
+                    returnValue(ptr as u32, json.len() as u32)
+                },
+                Err(_) => 1
+            }
         } else {
             1
         }
@@ -195,6 +237,7 @@ pub extern fn put_hello() {
 // print byte arguments to this method
 #[no_mangle]
 pub extern fn print_byte_args() -> i32 {
+    /*
     unsafe {
         let args: std::vec::Vec<u8> = Vec::with_capacity(1024 as usize);
         let pointer = args.as_ptr() as u32;
@@ -204,6 +247,32 @@ pub extern fn print_byte_args() -> i32 {
         }
         print(pointer, args_len as u32);
         0
+    }
+    */
+    unsafe {
+        let args: &mut std::vec::Vec<u8> = &mut Vec::with_capacity(1024 as usize);
+        let pointer = args.as_ptr() as u32;
+        let args_len = getArgs(pointer);
+        if args_len == -1 {
+            return -2;
+        }
+        args.set_len(args_len as usize);
+        let args: std::result::Result<serde_json::Value, serde_json::error::Error> = serde_json::from_slice(&args[..args_len as usize]);
+        let json : serde_json::Value;
+        match args {
+            Ok(some) => json = some,
+            Err(_) => return -1,
+        }
+        let foo = &json["foo"];
+        let args_str = serde_json::to_string(foo);
+        match args_str {
+            Ok(some) => {
+                let foo_ptr = some.as_ptr() as u32;
+                print(foo_ptr, some.len() as u32);
+                0
+            },
+            Err(_) => -3
+        }
     }
 }
 
