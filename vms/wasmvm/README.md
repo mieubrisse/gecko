@@ -33,7 +33,11 @@ wasm-pack build
 
 ## Creating a Private Key
 
-Transactions are signed by private keys. Before we create any transactions, we need a new private key.
+The WASM chain uses an account-based model.
+Each transaction on the chain is _sent_ by an account.
+Each account corresponds to a private key, which is used to sign transactions sent by the account.
+Each account has a nonce, which is incremented every time the account sends a transaction.
+Before we send any transactions, we need a new private key.
 To get one, we call `wasm.newKey`:
 
 ```sh
@@ -53,7 +57,7 @@ The response contains a new private key, which we'll use to sign transaction on-
 {
     "jsonrpc": "2.0",
     "result": {
-        "privateKey": "TAThYDSzzn7fLeutQcCWqAUNi8xsfgUBehDJ1rsXhwVpvizqE"
+        "privateKey": "RuuQbE5FPNwDHmkCbu9oxgR35eNFgb2eVkh6TLw7qbgqp5mn6"
     },
     "id": 1
 }
@@ -62,9 +66,11 @@ The response contains a new private key, which we'll use to sign transaction on-
 ## Uploading a Smart Contract
 
 To upload a smart contract, call `wasm.createContract`.
-This API method takes one argument, `contract`, which is the base-58 with checksum representation of a WASM file.
+This API method takes an argument, `contract`, which is the base-58 with checksum representation of a WASM file.
+It also takes arguments `senderKey` and `senderNonce`, which are the private key and nonce of the account sending the transaction.
 Below, we create an instance of the contract we defined above.
-Since the smart contract is 4 Kilobytes, we omit it below so as to not take up the whole page.
+`senderKey` is the key we generated above, and `senderNonce` is 1 since this is the first transaction sent by our account.
+Since the smart contract is ~4 Kilobytes, we omit it below so as to not take up the whole page.
 
 Sample call:
 
@@ -75,6 +81,8 @@ curl --location --request POST 'localhost:9650/ext/bc/wasm' \
     "jsonrpc": "2.0",
     "method": "wasm.createContract",
     "params": {
+        "senderKey":"RuuQbE5FPNwDHmkCbu9oxgR35eNFgb2eVkh6TLw7qbgqp5mn6",
+    	"senderNonce":1,
         "contract": "CONTRACT BYTES GO HERE"
     },
     "id": 1
@@ -86,7 +94,7 @@ This method returns the ID of the generated transaction, which is also the ID of
 ```json
 {
     "jsonrpc": "2.0",
-    "result": "2JeuXkXVhk7QQEdJprU8DUgEZs4upMyCK82tjLaTCQcdwtmnVD",
+    "result": "Enpx3HxtB6mXF3Q4deWkrWPhGACU9SQwc5FbCmyKM3uG8gS3j",
     "id": 1
 }
 ```
@@ -103,24 +111,24 @@ curl --location --request POST 'localhost:9650/ext/bc/wasm' \
     "jsonrpc": "2.0",
     "method": "wasm.getTx",
     "params": {
-        "id": "2JeuXkXVhk7QQEdJprU8DUgEZs4upMyCK82tjLaTCQcdwtmnVD"
+        "id": "Enpx3HxtB6mXF3Q4deWkrWPhGACU9SQwc5FbCmyKM3uG8gS3j"
     },
     "id": 1
 }'
 ```
 
-For a contract creation transaction, this method returns the transaction's status, type and 
-the transaction itself.
+For a contract creation transaction, this method returns the transaction's type and the transaction itself.
 
 ```json
 {
     "jsonrpc": "2.0",
     "result": {
         "tx": {
-            "status": "Accepted",
             "tx": {
-                "contract": "13BMCShJG9LHijX3gSQPJGp5uz7qxpqcSicAiykz96WX2TsLE5jtQDwykTMJmQPg9BmjH81JxV88EpfNYjq8K74eheP2ZsU16NcUN7ufowMTrCPzxRcfR8h6C2K3bs4hKzWYPJ2pdR9LiWXgzrT1GcnYojwMzZzJwFvdqirw5JbsmYNkHAuSKp3HuUnsMTLbpYeJEk7NT9U8pNxCtrQrnMTeSWbmNoQAq8qmkgLF8sfVz6qfbzMLQgiwNfKU1yyqEXwi1PcH1uFNRs9r7tMnn8cRHqJPaefaHGp5tJocyEZAFR4ey5xDB24oibjh2d8h5QLg7df8wwEzhzuAE5967bhr8QrUazy1sLQ8zkfkqW15dnP2jNapPADm3ZZijR2Uq4vadUA8LiyB412qWdDi9jWRDmwnBCrWJePmABhURQpS5cWsjP9JgpkGqZicu8jGw425jLs2S6wMLsfkDAvhjdw6RjsdDsXFQ5TY4xb67G21wAFZkLgV7KeaPEDZoHgipqqURjykaq1nzXJEVWKKZGCKguam6HeEKSdBBSVJ8x4bm6xStWY5LnzWf8RHMp99GqT2pU9QgPkTDk3Jo8yWo7pKvnRCisFKup8jXomwz4ubeXKY4zwpjCunoZcjm3NW8yJSkiKf47iFAXGLtSmjz3q9zd7XGQBnVDpLvp5ZrRapCWxGqTAzpt4iePDiNxFKqi4NCnK19utStjz8TF5RMcVHze38z3cyDqKVPhJMu1HdTEvST5gLNCUE1qDZ6ynnamq1DEDDafYawNb1D5N35iedEeNpuEodqyKyrnsrcvVe4cPzHC8RHKZ64a1j2CkBZ6ruDvyJGXCC4uAgHzKtkoqoEaWQbPmr9EuZrb9rLpuu2rkNRpkEyr5Po8qz5Go4cu2iZrjLR6xYQ5ebE3FSYjtQS8Xbed25112MwUDQVYcMJEM8R7nyHYR2XWHawjUdL1bnbJgQk9WkxaNR7BNBVt2sLA5KCuAZrLC1uMDQkPss8gDqc5CppnsRsRC4F3NEtzFG1qSkaDuUvmGiJdaAUC4iPXnGgyL39kAaaTcgLmX8999gT6MLnRzBQBf3VL4oR9",
-                "id": "2JeuXkXVhk7QQEdJprU8DUgEZs4upMyCK82tjLaTCQcdwtmnVD"
+                "contract": "CONTRACT BYTES GO HERE",
+                "id": "Enpx3HxtB6mXF3Q4deWkrWPhGACU9SQwc5FbCmyKM3uG8gS3j",
+                "nonce": "1",
+                "sender": "MsfAd26DBEUsadYdeGrk6SH84fMgedmQD"
             },
             "type": "contract creation"
         }
@@ -132,16 +140,17 @@ the transaction itself.
 ## Invoking a Smart Contract
 
 A smart contract that has been uploaded can be invoked by calling `wasm.invoke`.
-This method takes four arguments:
+This method takes six arguments:
 
 * `contractID`: The contract being invoked
 * `function`: The name of the function being invoked
+* `senderKey` and `senderNonce`: Similar to previous call. Note that we increment `senderNonce` to 2.
 * `args`: An array of integer arguments to pass to the function being invoked. May be omitted.
   * Each element of `args` must specify its type, which is one of: `int32`, `int64`
 * `byteArgs`: The base 58 with checksum representation of a byte array to pass to the smart contract. May be omitted.
 
 Let's invoke the contract's `create_owner` method.
-As you can see in the Rust code, this method takes one arguments: the owner's ID.
+As you can see in the Rust code, this method takes one argument: the owner's ID.
 We give the owner ID 123 below.
 
 ```sh
@@ -151,8 +160,10 @@ curl --location --request POST 'localhost:9650/ext/bc/wasm' \
     "jsonrpc": "2.0",
     "method": "wasm.invoke",
     "params":{
-    	"contractID":"2JeuXkXVhk7QQEdJprU8DUgEZs4upMyCK82tjLaTCQcdwtmnVD",
+    	"contractID":"Enpx3HxtB6mXF3Q4deWkrWPhGACU9SQwc5FbCmyKM3uG8gS3j",
     	"function":"create_owner",
+        "senderNonce":"2",
+        "senderKey":"RuuQbE5FPNwDHmkCbu9oxgR35eNFgb2eVkh6TLw7qbgqp5mn6",
         "args": [
             {
                 "type": "int32",
@@ -170,7 +181,7 @@ The resulting transaction's ID is returned:
 {
     "jsonrpc": "2.0",
     "result": {
-        "txID": "QSGQSXYjYkx4kZAhCPTqNcfJuoCJbMwx5oSFEbRhoWGcRT7YQ"
+        "txID": "d84yyAPCypq9JawDXEuntrfs8ggbBDAqbmEic7MM8cUa1E2Kb"
     },
     "id": 1
 }
@@ -185,7 +196,7 @@ curl --location --request POST 'localhost:9650/ext/bc/wasm' \
     "jsonrpc": "2.0",
     "method": "wasm.getTx",
     "params": {
-        "id": "QSGQSXYjYkx4kZAhCPTqNcfJuoCJbMwx5oSFEbRhoWGcRT7YQ"
+        "id": "d84yyAPCypq9JawDXEuntrfs8ggbBDAqbmEic7MM8cUa1E2Kb"
     },
     "id": 1
 }'
@@ -196,6 +207,8 @@ The response show the arguments to the invoked method as well as the returned va
 `byteArguments` and `returnValue` are both encoded with base 58 and a checksum.
 In this case, both have value `"45PJLL"`, which is the encoding for an empty byte array.
 That is, this method received no `byteArguments` and returned nothing (void.) 
+`sender` is the _address_ of the account that sent the transaction.
+This is the hash of the public key that corresponds to the private key that controls the account. 
 
 ```json
 {
@@ -206,11 +219,14 @@ That is, this method received no `byteArguments` and returned nothing (void.)
             "returnValue": "45PJLL",
             "tx": {
                 "arguments": [
-                    1
+                    2
                 ],
-                "byteArguments": "45PJLL",
-                "contractID": "2JeuXkXVhk7QQEdJprU8DUgEZs4upMyCK82tjLaTCQcdwtmnVD",
-                "function": "create_owner"
+                "byteArgs": "45PJLL",
+                "contractID": "Enpx3HxtB6mXF3Q4deWkrWPhGACU9SQwc5FbCmyKM3uG8gS3j",
+                "function": "create_owner",
+                "id": "d84yyAPCypq9JawDXEuntrfs8ggbBDAqbmEic7MM8cUa1E2Kb",
+                "sender": "MsfAd26DBEUsadYdeGrk6SH84fMgedmQD",
+                "senderNonce": "2"
             },
             "type": "contract invocation"
         }
@@ -224,7 +240,7 @@ That is, this method received no `byteArguments` and returned nothing (void.)
 WASM smart contracts may (and in practice do) need to import information/functionality from the "outside world" (ie the WASM chain.)
 The WASM chain provides an interface for the contracts to use.
 Part of this interface is a key/value database.
-Each contract has its database that only it reads/writes.
+Each contract has its own database that only it reads/writes.
 
 Right now, the following methods are provided to contracts:
 
@@ -232,20 +248,47 @@ Right now, the following methods are provided to contracts:
     * Print to the chain's log
     * `ptr` is a pointer to the first element of a byte array
     * `len` is the byte array's length  
-* `int dbPut(int key, int keyLen, int value, int valueLen)`
+* `int dbPut(int keyPtr, int keyLen, int value, int valueLen)`
     * Put a key/value pair in the smart contract's database
-    * `key` is a pointer to the first element of a byte array (the key.)
-    * `len` is the byte array's length  
+    * `keyPtr` is a pointer to the first element of a byte array (the key.)
+    * `keyLen` is the byte array's length  
     * Similar for `value` and `valueLen`
     * Returns 0 on success, otherwise non 0
-* `int dbGet(int key, int keyLen, int value)`
+* `int dbGet(int keyPtr, int keyLen, int value)`
     * Get a value from the smart contract's database.
-    * `key` and `keyLen` specify the key.
+    * `keyPtr` and `keyLen` specify the key.
     * `value` is a pointer to a buffer to write the value to.
     * Returns the length of the value, or -1 on failure.
+* `int dbDelete(int keyPtr, int keyLen)`
+    * Delete a key/value pair in the smart contract's database.
+    * `keyPtr` is a pointer to the first element of a byte array (the key)
+    * `keyLen` is the key's length 
+    * Returns 0 on success, otherwise non-zero.
 * `int dbGetValueLen(int keyPtr, int keyLen)`
     * Return the length of the value whose key is specified by `keyPtr` and `keyLen`
     * Return -1 on failure
+* `int returnValue(int valuePtr, int valueLen)`
+    * Called by the contract to return a value
+    * The return value will be persisted
+    * `valuePtr` is a pointer to the first element of a byte array (the return value.)
+    * `valueLen` is the return value's length
+    * Contract's that don't call this method are considered to return void.
+    * If a contract calls this method multiple times, only the last value will be persisted.
+    * Returns 0 on success, otherwise non-zero
+* `int getArgs(int ptr)`
+    * Get the byte arguments to this contract method invocation.
+    * `ptr` is a pointer to a byte array. The args will be written here.
+    * The args are guaranteed to be no longer than 1024.
+    * Returns the length of the args, or -1 on failure.
+* `int getSender(int ptr)`
+    * Get the address of the sender of the transaction that invoked this contract method.
+    * The address is 20 bytes.
+    * The address will be written to the byte array pointed to by `ptr`.
+    * Returns 0 on success, otherwise non-zero.
+* `int getTxID(int ptr)`
+    * Get the ID of the transaction that invoked this contract method.
+    * Writes the ID, which is 32 bytes, to the byte array pointed to by `ptr`.
+    * Returns 0 on success, otherwise non-zero.
 
 ## Calling Conventions
 
@@ -256,7 +299,7 @@ This model is rather restrictive, so we've created a calling convention to allow
 
 One can pass a byte array to a contract method by providing argument `byteArgs` when calling `wasm.Invoke`.
 
-You may be thinking, "wait, didn't you just say WASM methods can't take byte array aruments?" Well, that's true. To get around that, at the start of every contract method invocation, we write `byteArgs` to the contract's database. Then, the contract can read `byteArgs` and use them however it likes. The convention is that `byteArgs` is mapped to in the contract's database by the empty key (that is, an empmty byte array.)
+You may be thinking, "wait, didn't you just say WASM methods can't take byte array arguments?" Well, that's true. We don't pass in the byte arguments directly. The contract can read the byte arguments by calling imported method `getArgs` (see "Imported Function" section above.) 
 
 #### Example
 
@@ -271,8 +314,10 @@ curl --location --request POST 'localhost:9650/ext/bc/wasm' \
     "jsonrpc": "2.0",
     "method": "wasm.invoke",
     "params": {
-        "contractID": "2JeuXkXVhk7QQEdJprU8DUgEZs4upMyCK82tjLaTCQcdwtmnVD",
+        "contractID": "Enpx3HxtB6mXF3Q4deWkrWPhGACU9SQwc5FbCmyKM3uG8gS3j",
         "function": "print_byte_args",
+        "senderNonce":"3",
+        "senderKey":"RuuQbE5FPNwDHmkCbu9oxgR35eNFgb2eVkh6TLw7qbgqp5mn6",
         "args": [],
         "byteArgs":"U1Gavwb6Dr7nwea5Qgp2hPNv1fDg2o5XAzHpWtcEBS5cq6F78Nv5GUxp"
     },
@@ -294,7 +339,7 @@ We also have a calling convention to allow returning complex values from a contr
 
 The convention is that a method's literal return value (ie `return X`) is solely a success/failure indicator. If a method executes successfully, it returns 0. Otherwise, it returns some other integer. This determines the value of `invocationSuccessful` when calling `getTx`.
 
-If the method wants to return a value, it converts it to a byte array and writes it to the database, where the key is the byte array containing only 1 (ie `[1]`) This determines the `returnValue` retrieved when calling `getTx`.
+If the method wants to return a value, it converts it to a byte array and calls `returnValue`, which is imported from the WASM chain (see "Imported Functions" section above.) This determines the `returnValue` retrieved when calling `getTx`.
 
 #### Example
 
@@ -307,8 +352,10 @@ curl --location --request POST 'localhost:9650/ext/bc/wasm' \
     "jsonrpc": "2.0",
     "method": "wasm.invoke",
     "params": {
-        "contractID": "2JeuXkXVhk7QQEdJprU8DUgEZs4upMyCK82tjLaTCQcdwtmnVD",
+        "contractID": "Enpx3HxtB6mXF3Q4deWkrWPhGACU9SQwc5FbCmyKM3uG8gS3j",
         "function": "get_num_bags",
+        "senderNonce":"4",
+        "senderKey":"RuuQbE5FPNwDHmkCbu9oxgR35eNFgb2eVkh6TLw7qbgqp5mn6",
         "args": [
             {
                 "type": "int32",
