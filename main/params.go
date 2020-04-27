@@ -26,6 +26,10 @@ import (
 	"github.com/ava-labs/gecko/utils/wrappers"
 )
 
+const (
+	dbVersion = "v0.1.0"
+)
+
 // Results of parsing the CLI
 var (
 	Config = node.Config{}
@@ -35,6 +39,14 @@ var (
 // GetIPs returns the default IPs for each network
 func GetIPs(networkID uint32) []string {
 	switch networkID {
+	case genesis.CascadeID:
+		return []string{
+			"3.227.207.132:21001",
+			"34.207.133.167:21001",
+			"107.23.241.199:21001",
+			"54.197.215.186:21001",
+			"18.234.153.22:21001",
+		}
 	default:
 		return nil
 	}
@@ -55,7 +67,7 @@ func init() {
 	fs := flag.NewFlagSet("gecko", flag.ContinueOnError)
 
 	// NetworkID:
-	networkName := fs.String("network-id", genesis.LocalName, "Network ID this node will connect to")
+	networkName := fs.String("network-id", genesis.CascadeName, "Network ID this node will connect to")
 
 	// Ava fees:
 	fs.Uint64Var(&Config.AvaTxFee, "ava-tx-fee", 0, "Ava transaction fee, in $nAva")
@@ -135,7 +147,7 @@ func init() {
 	// DB:
 	if *db && err == nil {
 		// TODO: Add better params here
-		dbPath := path.Join(*dbDir, genesis.NetworkName(Config.NetworkID))
+		dbPath := path.Join(*dbDir, genesis.NetworkName(Config.NetworkID), dbVersion)
 		db, err := leveldb.New(dbPath, 0, 0, 0)
 		Config.DB = db
 		errs.Add(err)
@@ -149,11 +161,9 @@ func init() {
 	// If public IP is not specified, get it using shell command dig
 	if *consensusIP == "" {
 		ip, err = Config.Nat.IP()
-		errs.Add(fmt.Errorf(
-			"%s\n"+
-				"If you are trying to create a local network, try adding --public-ip=127.0.0.1\n"+
-				"If you are attempting to connect to a public network, you may need to manually report your IP and perform port forwarding",
-			err))
+		if err != nil {
+			ip = net.IPv4zero
+		}
 	} else {
 		ip = net.ParseIP(*consensusIP)
 	}
