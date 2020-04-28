@@ -43,16 +43,38 @@ pub struct Bag {
 // Returns 0 on success
 // Returns 1 otherwise
 #[no_mangle]
-pub extern fn create_owner(id: u32) -> i32 {
-    let mut owners = OWNERS.lock().unwrap();
-    match owners.get(&id) {
-        Some(_) => 1,
-        None => {
-            owners.insert(id, Owner{
-                id: id,
-                bags: Vec::new()
-            });
-            0
+pub extern fn create_owner() -> i32 {
+    unsafe {
+        let args: &mut std::vec::Vec<u8> = &mut Vec::with_capacity(1024 as usize);
+        let pointer = args.as_ptr() as u32;
+        let args_len = getArgs(pointer);
+        if args_len == -1 {
+            return -1;
+        }
+        args.set_len(args_len as usize);
+        let args_json: std::result::Result<serde_json::Value, serde_json::error::Error> = serde_json::from_slice(&args[..args_len as usize]);
+        let json : serde_json::Value;
+        match args_json {
+            Ok(some) => json = some,
+            Err(_) => return -1,
+        }
+        let owner_id_value = &json["owner_id"];
+        let owner_id: u32;
+        match owner_id_value {
+            Value::Number(id) => owner_id = id.as_u64().unwrap() as u32,
+            _ => return -1,
+        }
+
+        let mut owners = OWNERS.lock().unwrap();
+        match owners.get(&owner_id) {
+            Some(_) => 1,
+            None => {
+                owners.insert(owner_id, Owner{
+                    id: owner_id,
+                    bags: Vec::new()
+                });
+                0
+            }
         }
     }
 }
