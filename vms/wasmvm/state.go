@@ -21,7 +21,7 @@ const (
 
 // put a contract (in its raw byte form) in the database
 func (vm *VM) putContractBytes(db database.Database, ID ids.ID, contract []byte) error {
-	return vm.State.Put(db, contractBytesTypeID, ID, bytes{contract})
+	return vm.State.Put(db, contractBytesTypeID, ID, bytesTyp{contract})
 }
 
 // get a contract (in its raw byte form) by its ID
@@ -81,7 +81,7 @@ func (vm *VM) getContract(db database.Database, ID ids.ID) (*wasm.Instance, erro
 
 // put a contract's state (ie its whole memory) in the database
 func (vm *VM) putContractState(db database.Database, ID ids.ID, state []byte) error {
-	return vm.State.Put(db, stateTypeID, ID, bytes{state})
+	return vm.State.Put(db, stateTypeID, ID, bytesTyp{state})
 }
 
 // get a contract's state (ie its whole memory) by its ID
@@ -170,10 +170,10 @@ func (vm *VM) registerDBTypes() error {
 	return nil
 }
 
-type bytes struct {
+type bytesTyp struct {
 	b []byte
 }
 
-func (bytes bytes) Bytes() []byte {
+func (bytes bytesTyp) Bytes() []byte {
 	return bytes.b
 }

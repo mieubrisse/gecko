@@ -213,7 +213,6 @@ pub extern fn put_hello() {
 // print byte arguments to this method
 #[no_mangle]
 pub extern fn print_byte_args() -> i32 {
-    /*
     unsafe {
         let args: std::vec::Vec<u8> = Vec::with_capacity(1024 as usize);
         let pointer = args.as_ptr() as u32;
@@ -224,7 +223,7 @@ pub extern fn print_byte_args() -> i32 {
         print(pointer, args_len as u32);
         0
     }
-    */
+    /*
     unsafe {
         let args: &mut std::vec::Vec<u8> = &mut Vec::with_capacity(1024 as usize);
         let pointer = args.as_ptr() as u32;
@@ -250,6 +249,7 @@ pub extern fn print_byte_args() -> i32 {
             Err(_) => -3
         }
     }
+    */
 }
 
 // print the sender that invoked this method

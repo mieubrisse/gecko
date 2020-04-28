@@ -1,6 +1,7 @@
 package wasmvm
 
 import (
+	encjson "encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -13,6 +14,8 @@ import (
 	"github.com/ava-labs/gecko/ids"
 	"github.com/ava-labs/gecko/snow/engine/common"
 )
+
+var errBagByteArgs = errors.New("expected 'byteArgs' to be JSON or base58 formatted bytes but was neither")
 
 // CreateStaticHandlers returns a map where:
 // Keys: The path extension for this VM's static API
@@ -107,7 +110,7 @@ type InvokeArgs struct {
 	// Integer arguments to the function
 	Args []ArgAPI `json:"args"`
 	// Byte arguments to the function
-	ByteArgs formatting.CB58 `json:"byteArgs"`
+	ByteArgs interface{} `json:"byteArgs"`
 }
 
 func (args *InvokeArgs) validate() error {
@@ -120,9 +123,34 @@ func (args *InvokeArgs) validate() error {
 		return errors.New("contractID not specified")
 	case args.Function == "":
 		return errors.New("function not specified")
-	default:
-		return nil
 	}
+	return nil
+}
+
+func (args *InvokeArgs) getByteArgs() ([]byte, error) {
+	if args.ByteArgs == nil {
+		return []byte{}, nil
+	}
+	// If byteArgs are JSON, marshal them to bytes
+	// Only top-level array or object is accepted as valid JSON
+	switch args.ByteArgs.(type) {
+	case []interface{}, map[string]interface{}:
+		if bytes, err := encjson.Marshal(args.ByteArgs); err == nil {
+			return bytes, nil
+		}
+		return nil, errBagByteArgs
+	}
+
+	// Otherwise, try to parse them as base 58 string
+	asStr, ok := args.ByteArgs.(string)
+	if !ok {
+		return nil, fmt.Errorf("expected 'byteArgs' to be JSON or base58 formatted bytes but was neither")
+	}
+	formatter := formatting.CB58{}
+	if err := formatter.FromString(asStr); err != nil {
+		return nil, fmt.Errorf("expected 'byteArgs' to be JSON or base58 formatted bytes but was neither")
+	}
+	return formatter.Bytes, nil
 }
 
 // InvokeResponse ...
@@ -146,6 +174,12 @@ func (s *Service) Invoke(_ *http.Request, args *InvokeArgs, response *InvokeResp
 		}
 	}
 
+	// Parse byteArgs
+	byteArgs, err := args.getByteArgs()
+	if err != nil {
+		return fmt.Errorf("couldn't parse 'byteArgs': %v", err)
+	}
+
 	senderKeyIntf, err := keyFactory.ToPrivateKey(args.SenderKey.Bytes)
 	if err != nil {
 		return fmt.Errorf("couldn't parse 'privateKey' to a SECP256K1R private key: %v", err)
@@ -155,7 +189,7 @@ func (s *Service) Invoke(_ *http.Request, args *InvokeArgs, response *InvokeResp
 		return fmt.Errorf("couldn't parse 'privateKey' to a SECP256K1R private key: %v", err)
 	}
 
-	tx, err := s.vm.newInvokeTx(args.ContractID, args.Function, fnArgs, args.ByteArgs.Bytes, uint64(args.SenderNonce), senderKey)
+	tx, err := s.vm.newInvokeTx(args.ContractID, args.Function, fnArgs, byteArgs, uint64(args.SenderNonce), senderKey)
 	if err != nil {
 		return fmt.Errorf("couldn't create tx: %s", err)
 	}

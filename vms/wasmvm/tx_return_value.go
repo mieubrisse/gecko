@@ -38,7 +38,7 @@ func (rv *txReturnValue) MarshalJSON() ([]byte, error) {
 	case *invokeTx:
 		asMap["type"] = "contract invocation"
 		asMap["invocationSuccessful"] = rv.InvocationSuccessful
-		asMap["returnValue"] = formatReturnValue(rv.ReturnValue)
+		asMap["returnValue"] = formatBytes(rv.ReturnValue)
 	case *createContractTx:
 		asMap["type"] = "contract creation"
 	}
@@ -46,14 +46,18 @@ func (rv *txReturnValue) MarshalJSON() ([]byte, error) {
 	return json.Marshal(asMap)
 }
 
-func formatReturnValue(returnValue []byte) interface{} {
-	if bytes.Equal(returnValue, []byte{}) {
+func formatBytes(b []byte) interface{} {
+	if bytes.Equal(b, []byte{}) {
 		return nil
 	}
-	var asMap map[string]interface{}
-	if err := json.Unmarshal(returnValue, &asMap); err == nil { // If returnValue is JSON, display it as such.
+	var asMap map[string]interface{} // See if bytes are JSON object
+	if err := json.Unmarshal(b, &asMap); err == nil {
 		return asMap
 	}
-	byteFormatter := formatting.CB58{Bytes: returnValue}
+	var asList []interface{} // See if bytes are JSON array
+	if err := json.Unmarshal(b, &asList); err == nil {
+		return asList
+	}
+	byteFormatter := formatting.CB58{Bytes: b}
 	return byteFormatter.String()
 }

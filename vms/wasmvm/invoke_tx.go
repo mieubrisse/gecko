@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/ava-labs/gecko/utils/crypto"
-	"github.com/ava-labs/gecko/utils/formatting"
 
 	"github.com/wasmerio/go-ext-wasm/wasmer"
 
@@ -251,7 +250,6 @@ func (vm *VM) newInvokeTx(contractID ids.ID, functionName string, args []interfa
 		return nil, fmt.Errorf("signature on invokeTx is wrong length. Expected %v but got %v", len(tx.SenderSig), len(sig))
 	}
 	copy(tx.SenderSig[:], sig)
-
 	return tx, tx.initialize(vm)
 }
 
@@ -263,7 +261,6 @@ func (tx *invokeTx) MarshalJSON() ([]byte, error) {
 	asMap["sender"] = tx.senderAddress.String()
 	asMap["id"] = tx.id.String()
 	asMap["senderNonce"] = jsonhelper.Uint64(tx.SenderNonce)
-	byteArgs := formatting.CB58{Bytes: tx.ByteArguments}
-	asMap["byteArgs"] = byteArgs.String()
+	asMap["byteArgs"] = formatBytes(tx.ByteArguments)
 	return json.Marshal(asMap)
 }
