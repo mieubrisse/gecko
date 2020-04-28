@@ -1,6 +1,7 @@
 package wasmvm
 
 import (
+	"bytes"
 	"encoding/json"
 
 	"github.com/ava-labs/gecko/utils/formatting"
@@ -37,16 +38,22 @@ func (rv *txReturnValue) MarshalJSON() ([]byte, error) {
 	case *invokeTx:
 		asMap["type"] = "contract invocation"
 		asMap["invocationSuccessful"] = rv.InvocationSuccessful
-		var returnValueMap map[string]interface{}
-		if err := json.Unmarshal(rv.ReturnValue, &returnValueMap); err == nil { // If returnValue is JSON, display it as such.
-			asMap["returnValue"] = returnValueMap
-		} else { // Otherwise display as base 58 string
-			byteFormatter := formatting.CB58{Bytes: rv.ReturnValue}
-			asMap["returnValue"] = byteFormatter.String()
-		}
+		asMap["returnValue"] = formatReturnValue(rv.ReturnValue)
 	case *createContractTx:
 		asMap["type"] = "contract creation"
 	}
 
 	return json.Marshal(asMap)
+}
+
+func formatReturnValue(returnValue []byte) interface{} {
+	if bytes.Equal(returnValue, []byte{}) {
+		return nil
+	}
+	var asMap map[string]interface{}
+	if err := json.Unmarshal(returnValue, &asMap); err == nil { // If returnValue is JSON, display it as such.
+		return asMap
+	}
+	byteFormatter := formatting.CB58{Bytes: returnValue}
+	return byteFormatter.String()
 }
