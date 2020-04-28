@@ -153,7 +153,7 @@ func (tx *invokeTx) SemanticVerify(db database.Database) error {
 	if err := contractDb.Put(argsKey, tx.ByteArguments); err != nil {
 		return fmt.Errorf("couldn't set byte arguments: %v", err)
 	}
-	db.Delete(returnKey) // Clear the old return value
+	contractDb.Delete(returnKey) // Clear the old return value
 
 	success := false                // True if the function executes successfully
 	val, err := fn(tx.Arguments...) // Call the function

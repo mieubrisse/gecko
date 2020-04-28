@@ -230,7 +230,7 @@ type GetTxArgs struct {
 
 // GetTxResponse ...
 type GetTxResponse struct {
-	Tx *txReturnValue `json:"tx"`
+	Tx *txReturnValue `json:"receipt"`
 }
 
 // GetTx returns a tx by its ID

@@ -103,30 +103,6 @@ pub extern fn update_bag_price(id: u32, price: u32) -> i32 {
     }
 }
 
-// Get a bag's price
-// Returns 1 if the bag doesn't exist
-#[no_mangle]
-pub extern fn get_bag_price(id: u32) -> i32 {
-    unsafe {
-        if let Some(bag) = BAGS.lock().unwrap().get(&id) {
-            let response = json!({
-                "bagID": bag.id,
-                "price": bag.price
-            });
-            let response = serde_json::to_vec(&response);
-            match response {
-                Ok(json) => {
-                    let ptr = json.as_ptr();
-                    returnValue(ptr as u32, json.len() as u32)
-                },
-                Err(_) => 1
-            }
-        } else {
-            1
-        }
-    }
-}
-
 // Return the owner with the specified ID
 // Returns 1 if the owner doesn't exist
 #[no_mangle]

@@ -37,8 +37,13 @@ func (rv *txReturnValue) MarshalJSON() ([]byte, error) {
 	case *invokeTx:
 		asMap["type"] = "contract invocation"
 		asMap["invocationSuccessful"] = rv.InvocationSuccessful
-		byteFormatter := formatting.CB58{Bytes: rv.ReturnValue}
-		asMap["returnValue"] = byteFormatter.String()
+		var returnValueMap map[string]interface{}
+		if err := json.Unmarshal(rv.ReturnValue, &returnValueMap); err == nil { // If returnValue is JSON, display it as such.
+			asMap["returnValue"] = returnValueMap
+		} else { // Otherwise display as base 58 string
+			byteFormatter := formatting.CB58{Bytes: rv.ReturnValue}
+			asMap["returnValue"] = byteFormatter.String()
+		}
 	case *createContractTx:
 		asMap["type"] = "contract creation"
 	}
