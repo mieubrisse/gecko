@@ -17,9 +17,11 @@ To launch a one node network:
 
 See [here](https://github.com/ava-labs/gecko-internal/blob/wasm/vms/wasmvm/contracts/rust_bag/src/lib.rs) for a Rust implementation of a smart contract.
 
+(Please note that I've never used Rust before so the code quality is far from perfect.)
+
 In this smart contract there are 2 entities: bags and owners.
 
-A bag has a handful of properties, such as price.
+A bag has a handful of properties, such as price and condition.
 Each bag has an owner, and each owner has 0 or more bags.
 
 The smart contract allows for the creation of owners and bags, the transfer of bags between owners, and the update of bag prices.
@@ -145,13 +147,10 @@ This method takes six arguments:
 * `contractID`: The contract being invoked
 * `function`: The name of the function being invoked
 * `senderKey` and `senderNonce`: Similar to previous call. Note that we increment `senderNonce` to 2.
-* `args`: An array of integer arguments to pass to the function being invoked. May be omitted.
-  * Each element of `args` must specify its type, which is one of: `int32`, `int64`
-* `byteArgs`: The base 58 with checksum representation of a byte array to pass to the smart contract. May be omitted.
+* `byteArgs`: Arguments to the smart contract method. Can be JSON object/array or base58 encoded bytes. May be omitted.
 
 Let's invoke the contract's `create_owner` method.
 As you can see in the Rust code, this method takes one argument: the owner's ID.
-We give the owner ID 123 below.
 
 ```sh
 curl --location --request POST 'localhost:9650/ext/bc/wasm' \
@@ -159,17 +158,14 @@ curl --location --request POST 'localhost:9650/ext/bc/wasm' \
 --data-raw '{
     "jsonrpc": "2.0",
     "method": "wasm.invoke",
-    "params":{
-    	"contractID":"Enpx3HxtB6mXF3Q4deWkrWPhGACU9SQwc5FbCmyKM3uG8gS3j",
-    	"function":"create_owner",
-        "senderNonce":"2",
+    "params": {
+        "contractID": "Enpx3HxtB6mXF3Q4deWkrWPhGACU9SQwc5FbCmyKM3uG8gS3j",
+        "function": "create_owner",
+        "senderNonce":"4",
         "senderKey":"RuuQbE5FPNwDHmkCbu9oxgR35eNFgb2eVkh6TLw7qbgqp5mn6",
-        "args": [
-            {
-                "type": "int32",
-                "value": 123
-            }
-        ]
+        "args":{
+        	"owner_id":123
+        }
     },
     "id": 1
 }'
@@ -202,11 +198,9 @@ curl --location --request POST 'localhost:9650/ext/bc/wasm' \
 }'
 ```
 
-The response indicates that the transaction was a contract invocation and that the method being called didn't return an error.
-The response show the arguments to the invoked method as well as the returned value.
-`byteArguments` and `returnValue` are both encoded with base 58 and a checksum.
-In this case, both have value `"45PJLL"`, which is the encoding for an empty byte array.
-That is, this method received no `byteArguments` and returned nothing (void.) 
+The response indicates that the transaction was a contract invocation and that the method being called didn't return an error (`invocationSuccessful` == `true`).
+We can see the arguments to the invoked method as well as the returned value.
+`returnValue` is `null` because `create_owner` doesn't return a value.
 `sender` is the _address_ of the account that sent the transaction.
 This is the hash of the public key that corresponds to the private key that controls the account. 
 
@@ -214,17 +208,16 @@ This is the hash of the public key that corresponds to the private key that cont
 {
     "jsonrpc": "2.0",
     "result": {
-        "tx": {
+        "receipt": {
             "invocationSuccessful": true,
-            "returnValue": "45PJLL",
+            "returnValue": null,
             "tx": {
-                "arguments": [
-                    2
-                ],
-                "byteArgs": "45PJLL",
+                "args": {
+                    "owner_id": 123
+                },
                 "contractID": "Enpx3HxtB6mXF3Q4deWkrWPhGACU9SQwc5FbCmyKM3uG8gS3j",
                 "function": "create_owner",
-                "id": "d84yyAPCypq9JawDXEuntrfs8ggbBDAqbmEic7MM8cUa1E2Kb",
+                "id": "iBxPuyqNqchsdRxyddz6hQHY699BhsovgdCNA53EWvGSM9TFd",
                 "sender": "MsfAd26DBEUsadYdeGrk6SH84fMgedmQD",
                 "senderNonce": "2"
             },
@@ -297,13 +290,15 @@ This model is rather restrictive, so we've created a calling convention to allow
 
 ### Byte Arguments
 
-One can pass a byte array to a contract method by providing argument `byteArgs` when calling `wasm.Invoke`.
+One can pass a byte array (including JSON) to a contract method by providing argument `byteArgs` when calling `wasm.Invoke`.
 
-You may be thinking, "wait, didn't you just say WASM methods can't take byte array arguments?" Well, that's true. We don't pass in the byte arguments directly. The contract can read the byte arguments by calling imported method `getArgs` (see "Imported Function" section above.) 
+You may be thinking, "wait, didn't you just say WASM methods can only take numeric arguments?"
+Well, that's true. We don't pass in the byte arguments directly.
+The contract can read the byte arguments by calling imported method `getArgs` (see "Imported Function" section above.) 
 
 #### Example
 
-The method `print_byte_args` in the contract we defined above reads the byte arguments to it, then uses `print` to print them.
+The method `print_byte_args` in the contract we defined above reads the byte arguments to it, then uses imported method `print` to print them.
 
 When we call it:
 
@@ -315,23 +310,23 @@ curl --location --request POST 'localhost:9650/ext/bc/wasm' \
     "method": "wasm.invoke",
     "params": {
         "contractID": "Enpx3HxtB6mXF3Q4deWkrWPhGACU9SQwc5FbCmyKM3uG8gS3j",
+        "senderNonce":"2",
         "function": "print_byte_args",
-        "senderNonce":"3",
         "senderKey":"RuuQbE5FPNwDHmkCbu9oxgR35eNFgb2eVkh6TLw7qbgqp5mn6",
-        "args": [],
-        "byteArgs":"U1Gavwb6Dr7nwea5Qgp2hPNv1fDg2o5XAzHpWtcEBS5cq6F78Nv5GUxp"
+        "args":{
+        	"fizz":"buzz",
+        	"baz":["bar","bar"]
+        }
     },
     "id": 1
-}'
+}}'
 ```
 
 The following line is printed to the node's output:
 
 ```
-Print from smart contract: {"fizz":{"buzz":["baz"]},"foo":"bar"}
+Print from smart contract: {"baz":["bar","bar"],"fizz":"buzz"}
 ```
-
-That JSON is the `byteArgs` we passed in.
 
 ### Return Values
 
@@ -343,7 +338,8 @@ If the method wants to return a value, it converts it to a byte array and calls 
 
 #### Example
 
-Let's invoke contract method `get_num_bags`, which returns the number of bags that a given owner owns. This method takes one argument, the owner's ID.
+Let's invoke contract method `get_bag`. This method takes one argument, the bag's ID.
+(This assumes you've already called `create_bag` and created a bag with ID `1`.)
 
 ```sh
 curl --location --request POST 'localhost:9650/ext/bc/wasm' \
@@ -353,15 +349,12 @@ curl --location --request POST 'localhost:9650/ext/bc/wasm' \
     "method": "wasm.invoke",
     "params": {
         "contractID": "Enpx3HxtB6mXF3Q4deWkrWPhGACU9SQwc5FbCmyKM3uG8gS3j",
-        "function": "get_num_bags",
+        "function": "get_bag",
         "senderNonce":"4",
         "senderKey":"RuuQbE5FPNwDHmkCbu9oxgR35eNFgb2eVkh6TLw7qbgqp5mn6",
-        "args": [
-            {
-                "type": "int32",
-                "value": 123
-            }
-        ]
+        "args": {
+        	"bag_id":1
+        }
     },
     "id": 1
 }'
@@ -382,23 +375,27 @@ To look at the return value, we call `wasm.getTx`:
 }
 ```
 
-The `returnValue`, when decoded, is byte array `[0 0 0 0]`. Interpreted as a big-endian integer, this is 0. (As in, the owner owns 0 bags.) 
+The `returnValue` is the bag we retrieved.
 
 ```sh
 {
     "jsonrpc": "2.0",
     "result": {
-        "tx": {
+        "receipt": {
             "invocationSuccessful": true,
-            "returnValue": "1111XiaYg",
-            "status": "Accepted",
+            "returnValue": null,
             "tx": {
-                "arguments": [
-                    1
-                ],
-                "byteArguments": "45PJLL",
-                "contractID": "8UMzqASLDGo1ehWrgfnN151zZZtZh3ZDrRt4njQNRTHEmNHZv",
-                "function": "get_num_bags"
+                "args": {
+                    "bag_id": 1,
+                    "condition": "good",
+                    "owner_id": 456,
+                    "price": 100
+                },
+                "contractID": "Enpx3HxtB6mXF3Q4deWkrWPhGACU9SQwc5FbCmyKM3uG8gS3j",
+                "function": "create_bag",
+                "id": "es1RBnc26En5CFNNrkjo88czQ7StqDrsWT9ELDYm1eV5EUNoY",
+                "sender": "MsfAd26DBEUsadYdeGrk6SH84fMgedmQD",
+                "senderNonce": "4"
             },
             "type": "contract invocation"
         }
