@@ -45,6 +45,7 @@ pub struct Bag {
 #[no_mangle]
 pub extern fn create_owner() -> i32 {
     unsafe {
+        // Get args as raw bytes
         let args: &mut std::vec::Vec<u8> = &mut Vec::with_capacity(1024 as usize);
         let pointer = args.as_ptr() as u32;
         let args_len = getArgs(pointer);
@@ -52,22 +53,24 @@ pub extern fn create_owner() -> i32 {
             return -1;
         }
         args.set_len(args_len as usize);
+        // Parse args to json
         let args_json: std::result::Result<serde_json::Value, serde_json::error::Error> = serde_json::from_slice(&args[..args_len as usize]);
         let json : serde_json::Value;
         match args_json {
             Ok(some) => json = some,
             Err(_) => return -1,
         }
+        // Get "owner_id" field from json
         let owner_id_value = &json["owner_id"];
         let owner_id: u32;
         match owner_id_value {
             Value::Number(id) => owner_id = id.as_u64().unwrap() as u32,
             _ => return -1,
         }
-
+        // Create the owner
         let mut owners = OWNERS.lock().unwrap();
         match owners.get(&owner_id) {
-            Some(_) => 1,
+            Some(_) => -1, // This owner already exists
             None => {
                 owners.insert(owner_id, Owner{
                     id: owner_id,
@@ -84,53 +87,163 @@ pub extern fn create_owner() -> i32 {
 // Returns 0 on success
 // Returns -1 otherwise
 #[no_mangle]
-pub extern fn create_bag(id: u32, owner_id: u32, price: u32) -> i32 {
-    // Check that the bag doesn't exist and the owner does 
-    let mut bags = BAGS.lock().unwrap();
-    if let Some(_) = bags.get(&id) {
-        return 1 // failure
-    }
-
-    let owners = &mut OWNERS.lock().unwrap();
-    if let None = owners.get(&owner_id) {
-        return 1
-    }
-
-    // Update bag list
-    bags.insert(id, Bag{
-            id: id,
-            owner_id: owner_id,
-            num_transfers: 0,
-            price: price,
-            condition: Condition::New
+pub extern fn create_bag() -> i32 {
+    unsafe {
+        // Get args as raw bytes
+        let args: &mut std::vec::Vec<u8> = &mut Vec::with_capacity(1024 as usize);
+        let pointer = args.as_ptr() as u32;
+        let args_len = getArgs(pointer);
+        if args_len == -1 {
+            return -1;
         }
-    );
-    
-    // Update the owner
-    owners.get_mut(&owner_id).unwrap().bags.push(id);
-    0 //success
+        args.set_len(args_len as usize);
+
+        // Parse args to json
+        let args_json: std::result::Result<serde_json::Value, serde_json::error::Error> = serde_json::from_slice(&args[..args_len as usize]);
+        let json : serde_json::Value;
+        match args_json {
+            Ok(some) => json = some,
+            Err(_) => return -1,
+        }
+
+        // Get "owner_id" field from json
+        let owner_id: u32;
+        match &json["owner_id"] {
+            Value::Number(id) => owner_id = id.as_u64().unwrap() as u32,
+            _ => return -1,
+        }
+
+         // Get "bag_id" field from json
+         let bag_id: u32;
+         match &json["bag_id"] {
+             Value::Number(id) => bag_id = id.as_u64().unwrap() as u32,
+             _ => return -1,
+         }
+         
+         // Get "price" field
+         let price: u32;
+         match &json["price"] {
+             Value::Number(id) => price = id.as_u64().unwrap() as u32,
+             _ => return -1,
+         }
+
+         // Get "condition" field
+         let condition: Condition;
+         match &json["condition"] {
+                    Value::String(s) => match s.to_lowercase().as_str() {
+                        "new" => condition = Condition::New,
+                        "good" => condition = Condition::Good,
+                        "bad" => condition = Condition::Bad,
+                        "destroyed" => condition = Condition::Destroyed,
+                        _ => return -1
+                    }
+                    _ => return -1
+        }
+
+        // Check that the bag doesn't exist and the owner does 
+        let mut bags = BAGS.lock().unwrap();
+        if let Some(_) = bags.get(&bag_id) {
+            return 1 // failure
+        }
+
+        let owners = &mut OWNERS.lock().unwrap();
+        if let None = owners.get(&owner_id) {
+            return 1
+        }
+
+        // Update bag list
+        bags.insert(bag_id, Bag{
+                id: bag_id,
+                owner_id: owner_id,
+                num_transfers: 0,
+                price: price,
+                condition: condition,
+            }
+        );
+        
+        // Update the owner
+        owners.get_mut(&owner_id).unwrap().bags.push(bag_id);
+        0 //success
+    }
 }
 
 // Update the specified bag's price
 // Returns 0 on success
 // Returns 1 if the bag doesn't exist
 #[no_mangle]
-pub extern fn update_bag_price(id: u32, price: u32) -> i32 {
-    let bags = &mut BAGS.lock().unwrap();
-    if let Some(bag) = bags.get_mut(&id) {
-        bag.price=price;
-        0
-    } else {
-        1
+pub extern fn update_bag_price() -> i32 {
+    unsafe {
+        // Get args as raw bytes
+        let args: &mut std::vec::Vec<u8> = &mut Vec::with_capacity(1024 as usize);
+        let pointer = args.as_ptr() as u32;
+        let args_len = getArgs(pointer);
+        if args_len == -1 {
+            return -1;
+        }
+        args.set_len(args_len as usize);
+
+        // Parse args to json
+        let args_json: std::result::Result<serde_json::Value, serde_json::error::Error> = serde_json::from_slice(&args[..args_len as usize]);
+        let json : serde_json::Value;
+        match args_json {
+            Ok(some) => json = some,
+            Err(_) => return -1,
+        }
+
+        // Get "bag_id" field from json
+        let bag_id: u32;
+        match &json["bag_id"] {
+            Value::Number(id) => bag_id = id.as_u64().unwrap() as u32,
+            _ => return -1,
+        }
+
+        // Get "price" field from json
+        let price: u32;
+        match &json["price"] {
+            Value::Number(id) => price = id.as_u64().unwrap() as u32,
+            _ => return -1,
+        }
+
+        let bags = &mut BAGS.lock().unwrap();
+        if let Some(bag) = bags.get_mut(&bag_id) {
+            bag.price=price;
+            0
+        } else {
+            1
+        }
     }
 }
 
 // Return the owner with the specified ID
 // Returns 1 if the owner doesn't exist
 #[no_mangle]
-pub extern fn get_owner(id: u32) -> i32 {
+pub extern fn get_owner() -> i32 {
     unsafe {
-        if let Some(owner) = OWNERS.lock().unwrap().get(&id) {
+        // Get args as raw bytes
+        let args: &mut std::vec::Vec<u8> = &mut Vec::with_capacity(1024 as usize);
+        let pointer = args.as_ptr() as u32;
+        let args_len = getArgs(pointer);
+        if args_len == -1 {
+            return -1;
+        }
+        args.set_len(args_len as usize);
+
+        // Parse args to json
+        let args_json: std::result::Result<serde_json::Value, serde_json::error::Error> = serde_json::from_slice(&args[..args_len as usize]);
+        let json : serde_json::Value;
+        match args_json {
+            Ok(some) => json = some,
+            Err(_) => return -1,
+        }
+
+        // Get "owner_id" field from json
+        let owner_id: u32;
+        match &json["owner_id"] {
+            Value::Number(id) => owner_id = id.as_u64().unwrap() as u32,
+            _ => return -1,
+        }
+
+        if let Some(owner) = OWNERS.lock().unwrap().get(&owner_id) {
             let response = json!({
                 "ownerID": owner.id,
                 "bags": owner.bags
@@ -152,9 +265,33 @@ pub extern fn get_owner(id: u32) -> i32 {
 // Return the ID of the owner of the specified bag
 // Returns 1 if the bag doesn't exist
 #[no_mangle]
-pub extern fn get_bag(id: u32) -> i32 {
+pub extern fn get_bag() -> i32 {
     unsafe {
-        if let Some(bag) = BAGS.lock().unwrap().get(&id) {
+         // Get args as raw bytes
+         let args: &mut std::vec::Vec<u8> = &mut Vec::with_capacity(1024 as usize);
+         let pointer = args.as_ptr() as u32;
+         let args_len = getArgs(pointer);
+         if args_len == -1 {
+             return -1;
+         }
+         args.set_len(args_len as usize);
+ 
+         // Parse args to json
+         let args_json: std::result::Result<serde_json::Value, serde_json::error::Error> = serde_json::from_slice(&args[..args_len as usize]);
+         let json : serde_json::Value;
+         match args_json {
+             Ok(some) => json = some,
+             Err(_) => return -1,
+         }
+ 
+         // Get "bag_id" field from json
+         let bag_id: u32;
+         match &json["bag_id"] {
+             Value::Number(id) => bag_id = id.as_u64().unwrap() as u32,
+             _ => return -1,
+         }
+
+        if let Some(bag) = BAGS.lock().unwrap().get(&bag_id) {
             let condition = match bag.condition {
                 Condition::New => "new",
                 Condition::Good => "good",
@@ -184,37 +321,70 @@ pub extern fn get_bag(id: u32) -> i32 {
 // Transfer a bag to a new owner
 // Returns 1 if the bag or new owner don't exist
 #[no_mangle]
-pub extern fn transfer_bag(id: u32, new_owner_id:u32) -> i32 {
-    // Check that the bag and new owner exist 
-    let mut bags = BAGS.lock().unwrap();
-    let bag: &mut Bag;
-    if let Some(_bag) = bags.get_mut(&id) {
-      bag = _bag;
-    } else {
-        return 1 // bag doesn't exist
+pub extern fn transfer_bag() -> i32 {
+    unsafe {
+        // Get args as raw bytes
+        let args: &mut std::vec::Vec<u8> = &mut Vec::with_capacity(1024 as usize);
+        let pointer = args.as_ptr() as u32;
+        let args_len = getArgs(pointer);
+        if args_len == -1 {
+            return -1;
+        }
+        args.set_len(args_len as usize);
+
+        // Parse args to json
+        let args_json: std::result::Result<serde_json::Value, serde_json::error::Error> = serde_json::from_slice(&args[..args_len as usize]);
+        let json : serde_json::Value;
+        match args_json {
+            Ok(some) => json = some,
+            Err(_) => return -1,
+        }
+
+        // Get "bag_id" field from json
+        let bag_id: u32;
+        match &json["bag_id"] {
+            Value::Number(id) => bag_id = id.as_u64().unwrap() as u32,
+            _ => return -1,
+        }
+
+        // Get "owner_id" field from json
+        let owner_id: u32;
+        match &json["owner_id"] {
+            Value::Number(id) => owner_id = id.as_u64().unwrap() as u32,
+            _ => return -1,
+        }
+
+        // Check that the bag and new owner exist 
+        let mut bags = BAGS.lock().unwrap();
+        let bag: &mut Bag;
+        if let Some(_bag) = bags.get_mut(&bag_id) {
+        bag = _bag;
+        } else {
+            return 1 // bag doesn't exist
+        }
+
+        let owners = &mut OWNERS.lock().unwrap();
+        let new_owner: &mut Owner;
+        if let Some(owner) = owners.get_mut(&owner_id) {
+            new_owner = owner;
+        } else {
+            return 1 // new owner doesn't exist
+        }
+
+        // Update the new owner
+        new_owner.bags.push(bag.id);
+
+        // Update the bag's current owner
+        // get the index of the bag in the current owner's bag list
+        let current_owner = owners.get_mut(&bag.owner_id).unwrap();
+        let index = current_owner.bags.iter().position(|&r| r == bag_id).unwrap();
+        owners.get_mut(&bag.owner_id).unwrap().bags.remove(index);
+
+        // Update the bag
+        bag.owner_id = owner_id;    
+
+        0 // success
     }
-
-    let owners = &mut OWNERS.lock().unwrap();
-    let new_owner: &mut Owner;
-    if let Some(owner) = owners.get_mut(&new_owner_id) {
-        new_owner = owner;
-    } else {
-        return 1 // new owner doesn't exist
-    }
-
-    // Update the new owner
-    new_owner.bags.push(bag.id);
-
-    // Update the bag's current owner
-    // get the index of the bag in the current owner's bag list
-    let current_owner = owners.get_mut(&bag.owner_id).unwrap();
-    let index = current_owner.bags.iter().position(|&r| r == id).unwrap();
-    owners.get_mut(&bag.owner_id).unwrap().bags.remove(index);
-
-    // Update the bag
-    bag.owner_id = new_owner_id;    
-
-    0 // success
 }
 
 // Prints "Hello, world!"
@@ -245,33 +415,6 @@ pub extern fn print_byte_args() -> i32 {
         print(pointer, args_len as u32);
         0
     }
-    /*
-    unsafe {
-        let args: &mut std::vec::Vec<u8> = &mut Vec::with_capacity(1024 as usize);
-        let pointer = args.as_ptr() as u32;
-        let args_len = getArgs(pointer);
-        if args_len == -1 {
-            return -2;
-        }
-        args.set_len(args_len as usize);
-        let args: std::result::Result<serde_json::Value, serde_json::error::Error> = serde_json::from_slice(&args[..args_len as usize]);
-        let json : serde_json::Value;
-        match args {
-            Ok(some) => json = some,
-            Err(_) => return -1,
-        }
-        let foo = &json["foo"];
-        let args_str = serde_json::to_string(foo);
-        match args_str {
-            Ok(some) => {
-                let foo_ptr = some.as_ptr() as u32;
-                print(foo_ptr, some.len() as u32);
-                0
-            },
-            Err(_) => -3
-        }
-    }
-    */
 }
 
 // print the sender that invoked this method
