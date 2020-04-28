@@ -41,12 +41,8 @@ type UnsignedInvokeTx struct {
 	// Name of function to invoke
 	FunctionName string `serialize:"true"`
 
-	// Integer Arguments to the function
-	Arguments []interface{} `serialize:"true"`
-
 	// Byte arguments to pass to the method
-	// Should be in the form of a JSON
-	ByteArguments []byte `serialize:"true"`
+	Arguments []byte `serialize:"true"`
 
 	// Next unused nonce of this transaction's sender
 	SenderNonce uint64 `serialize:"true"`
@@ -75,17 +71,8 @@ func (tx *invokeTx) SyntacticVerify() error {
 		return errors.New("tx ID is empty")
 	case tx.FunctionName == "":
 		return errors.New("function name is empty")
-	case len(tx.ByteArguments) > maxSize:
+	case len(tx.Arguments) > maxSize:
 		return fmt.Errorf("length of byteArguments exceeds max size, %v", maxSize)
-	}
-
-	// Ensure all arguments are floats or ints
-	for _, arg := range tx.Arguments {
-		switch argType := arg.(type) {
-		case int32, int64, float32, float64:
-		default:
-			return fmt.Errorf("an argument has type %v. Must be one of: int32, int64, float32, float64", argType)
-		}
 	}
 	// TODO add more validation
 	return nil
@@ -149,13 +136,13 @@ func (tx *invokeTx) SemanticVerify(db database.Database) error {
 	}
 
 	// Set information to pass to contract's function
-	if err := contractDb.Put(argsKey, tx.ByteArguments); err != nil {
+	if err := contractDb.Put(argsKey, tx.Arguments); err != nil {
 		return fmt.Errorf("couldn't set byte arguments: %v", err)
 	}
 	contractDb.Delete(returnKey) // Clear the old return value
 
-	success := false                // True if the function executes successfully
-	val, err := fn(tx.Arguments...) // Call the function
+	success := false // True if the function executes successfully
+	val, err := fn() // Call the function
 	if err == nil {
 		// See if invocation was successful
 		// Return value of 0 is interpreted as success, all other values as failure.
@@ -226,15 +213,14 @@ func (tx *invokeTx) initialize(vm *VM) error {
 }
 
 // Creates a new, initialized tx
-func (vm *VM) newInvokeTx(contractID ids.ID, functionName string, args []interface{}, byteArgs []byte, senderNonce uint64, senderKey crypto.PrivateKey) (*invokeTx, error) {
+func (vm *VM) newInvokeTx(contractID ids.ID, functionName string, args []byte, senderNonce uint64, senderKey crypto.PrivateKey) (*invokeTx, error) {
 	tx := &invokeTx{
 		UnsignedInvokeTx: UnsignedInvokeTx{
-			vm:            vm,
-			ContractID:    contractID,
-			FunctionName:  functionName,
-			Arguments:     args,
-			ByteArguments: byteArgs,
-			SenderNonce:   senderNonce,
+			vm:           vm,
+			ContractID:   contractID,
+			FunctionName: functionName,
+			Arguments:    args,
+			SenderNonce:  senderNonce,
 		},
 	}
 	// Sign the tx
@@ -257,10 +243,9 @@ func (tx *invokeTx) MarshalJSON() ([]byte, error) {
 	asMap := make(map[string]interface{}, 7)
 	asMap["contractID"] = tx.ContractID.String()
 	asMap["function"] = tx.FunctionName
-	asMap["arguments"] = tx.Arguments
 	asMap["sender"] = tx.senderAddress.String()
 	asMap["id"] = tx.id.String()
 	asMap["senderNonce"] = jsonhelper.Uint64(tx.SenderNonce)
-	asMap["byteArgs"] = formatBytes(tx.ByteArguments)
+	asMap["args"] = formatBytes(tx.Arguments)
 	return json.Marshal(asMap)
 }

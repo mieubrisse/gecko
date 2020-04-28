@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/ava-labs/gecko/utils/crypto"
 	"github.com/ava-labs/gecko/utils/formatting"
@@ -53,48 +52,6 @@ func (s *Service) NewKey(_ *http.Request, args *struct{}, response *NewKeyRespon
 	return nil
 }
 
-// ArgAPI is the API repr of a function argument
-type ArgAPI struct {
-	Type  string      `json:"type"`
-	Value interface{} `json:"value"`
-}
-
-// Return argument as its go type
-func (arg *ArgAPI) toFnArg() (interface{}, error) {
-	switch strings.ToLower(arg.Type) {
-	case "int32":
-		if valInt32, ok := arg.Value.(int32); ok {
-			return valInt32, nil
-		}
-		if valInt64, ok := arg.Value.(int64); ok {
-			return int32(valInt64), nil
-		}
-		if valFloat32, ok := arg.Value.(float32); ok {
-			return int32(valFloat32), nil
-		}
-		if valFloat64, ok := arg.Value.(float64); ok {
-			return int32(valFloat64), nil
-		}
-		return nil, fmt.Errorf("value '%v' is not convertible to int32", arg.Value)
-	case "int64":
-		if valInt32, ok := arg.Value.(int32); ok {
-			return int64(valInt32), nil
-		}
-		if valInt64, ok := arg.Value.(int64); ok {
-			return valInt64, nil
-		}
-		if valFloat32, ok := arg.Value.(float32); ok {
-			return int64(valFloat32), nil
-		}
-		if valFloat64, ok := arg.Value.(float64); ok {
-			return int64(valFloat64), nil
-		}
-		return nil, fmt.Errorf("value '%v' is not convertible to int64", arg.Value)
-	default:
-		return nil, errors.New("arg type must be one of: int32, int64")
-	}
-}
-
 // InvokeArgs ...
 type InvokeArgs struct {
 	// Contract to invoke
@@ -107,10 +64,9 @@ type InvokeArgs struct {
 	SenderKey formatting.CB58 `json:"senderKey"`
 	// Sender's next unused nonce
 	SenderNonce json.Uint64 `json:"senderNonce"`
-	// Integer arguments to the function
-	Args []ArgAPI `json:"args"`
-	// Byte arguments to the function
-	ByteArgs interface{} `json:"byteArgs"`
+	// Arguments to the function
+	// Can be JSON object, JSON array or base58 w/ checksum encoded bytes
+	Args interface{} `json:"args"`
 }
 
 func (args *InvokeArgs) validate() error {
@@ -127,22 +83,22 @@ func (args *InvokeArgs) validate() error {
 	return nil
 }
 
-func (args *InvokeArgs) getByteArgs() ([]byte, error) {
-	if args.ByteArgs == nil {
+func (args *InvokeArgs) parse() ([]byte, error) {
+	if args.Args == nil {
 		return []byte{}, nil
 	}
 	// If byteArgs are JSON, marshal them to bytes
 	// Only top-level array or object is accepted as valid JSON
-	switch args.ByteArgs.(type) {
+	switch args.Args.(type) {
 	case []interface{}, map[string]interface{}:
-		if bytes, err := encjson.Marshal(args.ByteArgs); err == nil {
+		if bytes, err := encjson.Marshal(args.Args); err == nil {
 			return bytes, nil
 		}
 		return nil, errBagByteArgs
 	}
 
 	// Otherwise, try to parse them as base 58 string
-	asStr, ok := args.ByteArgs.(string)
+	asStr, ok := args.Args.(string)
 	if !ok {
 		return nil, fmt.Errorf("expected 'byteArgs' to be JSON or base58 formatted bytes but was neither")
 	}
@@ -165,19 +121,10 @@ func (s *Service) Invoke(_ *http.Request, args *InvokeArgs, response *InvokeResp
 		return fmt.Errorf("arguments failed validation: %v", err)
 	}
 
-	fnArgs := make([]interface{}, len(args.Args))
-	var err error
-	for i, arg := range args.Args {
-		fnArgs[i], err = arg.toFnArg()
-		if err != nil {
-			return fmt.Errorf("couldn't parse arg '%+v': %s", arg, err)
-		}
-	}
-
-	// Parse byteArgs
-	byteArgs, err := args.getByteArgs()
+	// Parse args
+	fnArgs, err := args.parse()
 	if err != nil {
-		return fmt.Errorf("couldn't parse 'byteArgs': %v", err)
+		return fmt.Errorf("couldn't parse 'args': %v", err)
 	}
 
 	senderKeyIntf, err := keyFactory.ToPrivateKey(args.SenderKey.Bytes)
@@ -189,7 +136,7 @@ func (s *Service) Invoke(_ *http.Request, args *InvokeArgs, response *InvokeResp
 		return fmt.Errorf("couldn't parse 'privateKey' to a SECP256K1R private key: %v", err)
 	}
 
-	tx, err := s.vm.newInvokeTx(args.ContractID, args.Function, fnArgs, byteArgs, uint64(args.SenderNonce), senderKey)
+	tx, err := s.vm.newInvokeTx(args.ContractID, args.Function, fnArgs, uint64(args.SenderNonce), senderKey)
 	if err != nil {
 		return fmt.Errorf("couldn't create tx: %s", err)
 	}
