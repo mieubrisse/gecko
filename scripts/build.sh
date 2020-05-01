@@ -7,6 +7,7 @@ SALTICIDAE_GO_VER="v0.2.0" # Must match salticidae-go version in go.mod
 echo "Fetching dependencies..."
 go mod download
 
+# Make sure specified version of salticidae-go and coreth exist
 export SALTICIDAE_GO_PATH=$GOPATH/pkg/mod/github.com/ava-labs/salticidae-go@$SALTICIDAE_GO_VER
 if [ ! -f $SALTICIDAE_GO_PATH ]; then
     echo "couldn't find salticidae-go version ${SALTICIDAE_GO_VER}"
