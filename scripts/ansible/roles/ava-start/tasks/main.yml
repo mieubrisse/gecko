@@ -15,7 +15,6 @@
       --http-tls-key-file="{{ http_tls_key_file }}"
       --http-tls-cert-file="{{ http_tls_cert_file }}"
       --bootstrap-ips="{{ bootstrap_ips }}"
-      --bootstrap-ids="{{ bootstrap_ids }}"
       --public-ip="{{ ansible_host }}"
       --staking-port="{{ staking_port }}"
       --staking-tls-enabled="{{ staking_tls_enabled }}"
